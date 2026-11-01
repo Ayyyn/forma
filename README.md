@@ -33,6 +33,10 @@ The supported enclosure load check is an ideal beam-deflection screen. General F
 
 ## Verify
 
+The [frozen evaluation](docs/FORMA_EVALUATION.md) ran 20 revision tasks and 11 compatible public CAD-bench tasks using real Meta responses and the unmodified upstream STEP scorer. Initial results: 19/20 revisions and 10/11 public tasks above the fixed threshold; public mean score 0.9883. The failed revision passed one targeted development rerun after a repair fix. The remaining slot-profile ambiguity is retained and explained.
+
+Open `http://127.0.0.1:8770/evaluation` in the working checkout for the review and demo timeline. A portable example is [examples/forma-instrument-case.json](examples/forma-instrument-case.json); the walkthrough is [docs/FORMA_DEMO_SCRIPT.md](docs/FORMA_DEMO_SCRIPT.md). Importing the example makes no model call.
+
 ```powershell
 python -m unittest discover -s tests -p 'test_workspace_*.py' -v
 python -m unittest discover -s tests -p 'test_crate_*.py' -v

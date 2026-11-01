@@ -204,7 +204,7 @@ def summarize(folder):
     return result
 
 
-def run(folder, group, limit, live):
+def run(folder, group, limit, live, ids=None):
     protocol = verify_freeze()
     folder.mkdir(parents=True, exist_ok=True)
     source_hashes = {p.name: digest(p) for p in (ROOT / "crate_studio").glob("*.py")}
@@ -223,6 +223,7 @@ def run(folder, group, limit, live):
                 "runner_sha256": digest(Path(__file__)),
                 "start_conservative_spend_usd": wa.estimated_spend(),
                 "maximum_calls_per_task": 2,
+                "requested_task_ids": ids,
                 "task_payload": "Only frozen synthetic revision documents and public CAD task geometry instructions; no user project data.",
             },
         )
@@ -242,6 +243,8 @@ def run(folder, group, limit, live):
             )
     count = 0
     for name, task in tasks:
+        if ids is not None and task["id"] not in ids:
+            continue
         dest = folder / task["id"]
         if (dest / "result.json").exists():
             continue
@@ -331,8 +334,9 @@ def main():
     parser.add_argument("--group", choices=("all", "revision", "public"), default="all")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--ids", nargs="+")
     args = parser.parse_args()
-    run(args.output, args.group, args.limit, args.live)
+    run(args.output, args.group, args.limit, args.live, args.ids)
 
 
 if __name__ == "__main__":

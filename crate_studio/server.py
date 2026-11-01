@@ -488,3 +488,27 @@ app.include_router(create_router(cad_lock, read_project))
 @app.get("/studio")
 def studio_home():
     return FileResponse(WEB / "studio.html")
+
+
+@app.get("/evaluation")
+def evaluation_home():
+    path = DATA / "evaluation" / "review.html"
+    if not path.is_file():
+        raise HTTPException(404, "Evaluation report has not been generated")
+    return FileResponse(path)
+
+
+@app.get("/evaluation-evidence")
+def evaluation_evidence():
+    path = DATA / "evaluation" / "evidence.zip"
+    if not path.is_file():
+        raise HTTPException(404, "Evaluation evidence has not been packaged")
+    return FileResponse(path, filename="forma-evaluation-evidence.zip")
+
+
+@app.get("/demo-package")
+def demo_package():
+    path = DATA / "demo-v1" / "instrument-case-package.zip"
+    if not path.is_file():
+        raise HTTPException(404, "Demo package has not been generated")
+    return FileResponse(path, filename="forma-instrument-case.zip")

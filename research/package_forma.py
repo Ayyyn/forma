@@ -20,6 +20,20 @@ def main():
     files += list((ROOT / "tests").glob("test_crate_*.py"))
     files += list((ROOT / "tests").glob("test_workspace_*.py"))
     files += [
+        ROOT / "tests/test_forma_eval.py",
+        ROOT / "requirements-cadbench-lock.txt",
+        ROOT / "examples/forma-instrument-case.json",
+    ]
+    files += [p for p in (ROOT / "evaluation/forma-v1").rglob("*") if p.is_file()]
+    protocol = json.loads(
+        (ROOT / "evaluation/forma-v1/protocol.json").read_text(encoding="utf-8")
+    )
+    files += [
+        ROOT / "research/vendor/cad-bench" / name
+        for name in protocol["upstream_file_hashes"]
+    ]
+    files += [ROOT / "research/vendor/cad-bench/LICENSE"]
+    files += [
         ROOT / p
         for p in [
             "docs/FORMA_STUDIO.md",
@@ -33,6 +47,16 @@ def main():
             "docs/FORMA_BUILD_PLAN.md",
             "docs/FORMA_PROGRESS.md",
             "docs/FORMA_WORKFLOW.md",
+            "docs/FORMA_EVALUATION.md",
+            "docs/FORMA_DEMO_SCRIPT.md",
+            "research/freeze_forma_eval.py",
+            "research/run_forma_eval.py",
+            "research/cadbench_score.py",
+            "research/verify_cadbench_oracles.py",
+            "research/verify_slot_interpretation.py",
+            "research/build_forma_demo.py",
+            "research/forma_eval_report.py",
+            "research/verify_eval_release.py",
         ]
     ]
     files += [
@@ -72,7 +96,7 @@ def main():
             z.write(p, p.relative_to(ROOT).as_posix())
         z.writestr(
             "README.md",
-            "# Forma\n\nStart with crate_studio/README.md. This source package contains the new local design app and checks. Create a Python 3.12 environment and install requirements-forma.txt. Run `python -m crate_studio`.\n\nThird-party Three.js assets retain their bundled MIT license. Earlier API transport is attributed in the app README. No provider credentials, Python runtime, or unrelated workspace studies are included.\n",
+            "# Forma CAD\n\nCreate a Python 3.12 environment, install requirements-forma.txt and run `python -m crate_studio`. Open http://127.0.0.1:8770/studio. Import examples/forma-instrument-case.json for the editable demo without model calls.\n\nRead docs/FORMA_WORKFLOW.md, docs/FORMA_DEMO_SCRIPT.md and docs/FORMA_EVALUATION.md. Frozen evaluation tasks, scoring controls and selected upstream CAD-bench verifier/reference files are included. Use a SEPARATE environment with requirements-cadbench-lock.txt for external STEP scoring; its OpenCascade version differs from Forma. Evidence is a separate download; model reruns require credentials and make paid requests.\n\nRun `python -m unittest discover -s tests -p test_*.py -v` for offline checks. Third-party browser assets and CAD-bench sources retain their bundled MIT licenses. Previous-work attribution is in crate_studio/README.md.\n",
         )
         z.writestr(
             ".gitignore",

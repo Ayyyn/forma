@@ -44,4 +44,17 @@ Browser checks: manual thickness change, visible engineering failure, feasible a
 
 ## Remaining product scope
 
-Physical measurements, engineered hinges, general origami/mechanism solving, general FEA, photo interpretation, external benchmark evaluation and production deployment are still pending. The stage canvas currently has fixed stage positions and session-local navigation. Follow [the build plan](FORMA_BUILD_PLAN.md).
+Physical measurements, engineered hinges, general origami/mechanism solving, general FEA, photo interpretation, broader held-out evaluation and production deployment are still pending. The stage canvas currently has fixed stage positions and session-local navigation. Follow [the build plan](FORMA_BUILD_PLAN.md).
+
+
+## Frozen evaluation and end-to-end demonstration
+
+Frozen commit `de8eae9` records 20 constructed revision tasks and 11 preselected CAD-bench geometry tasks. Initial live results: 19/20 revisions; 10/11 public tasks above a fixed 0.95 threshold; public mean upstream overall score 0.98830127. The unmodified external STEP scorer and all 11 reference oracles were checked in an isolated Build123D runtime. This is a local adapted public subset, not an official full benchmark run.
+
+The one revision failure exposed missing stock context and ambiguous repair citation directions. The planner fix preserves validation, exposes retained engineering checks and repeats the original instruction for evidence. One unchanged failed task passed a targeted live development rerun; no fresh full-suite claim is made. A public rounded-versus-square slot ambiguity remains in the initial score. Independent arithmetic and a separate explicit human edit verified the distinction; that edit is excluded from the frozen aggregate.
+
+Across initial and targeted runs: 33 actual responses and estimated $0.915048 model cost. No app cap increase. Exact source snapshots, task hashes, receipts, failures and candidate STEP/STL files are retained in the credential-scanned evidence archive. See [FORMA_EVALUATION.md](FORMA_EVALUATION.md).
+
+The curated demo has four immutable stages: original brief/3 mm panels, real retained Meta 4 mm revision, human height/brief edit, then motion and fabrication export. A portable example is tracked. Studio now supports revision/view permalinks and project-scoped history, with all older designs still accessible. Browser QA caught and fixed history clipping. See [FORMA_DEMO_SCRIPT.md](FORMA_DEMO_SCRIPT.md).
+
+Current checks: 81 offline unit tests (42 Studio, 35 enclosure, 4 evaluation controls) and 14 release HTTP/data checks for reports, evidence hashes, demo lineage, motion and component downloads. Physical measurements remain pending.

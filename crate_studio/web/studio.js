@@ -33,6 +33,7 @@ const state = {
   history: [],
   tab: "model",
   sketchTool: "select",
+  historyAll: false,
 };
 
 let THREE,
@@ -333,6 +334,7 @@ function useSnapshot(value) {
   state.selection = [];
   renderAll();
   renderConfigurations();
+  if (s.id) updateDocumentUrl();
   if (state.measure) renderMeasurement();
   workflow?.update(s);
 }
@@ -702,14 +704,44 @@ function showError(message) {
   status("Changes not saved · last valid geometry retained");
 }
 
+function updateDocumentUrl() {
+  if (!state.snapshot?.id) return;
+  const url = new URL(location.href);
+  url.searchParams.delete("crate");
+  url.searchParams.set("document", state.snapshot.id);
+  url.searchParams.set("view", state.tab);
+  history.replaceState(null, "", url.pathname + url.search);
+}
+
 function renderHistory() {
-  $("#version-history").innerHTML = state.documents
+  const byId = new Map(state.documents.map((d) => [d.id, d]));
+  const rootOf = (id) => {
+    const seen = new Set();
+    while (id && byId.get(id)?.parent_id && !seen.has(id)) {
+      seen.add(id);
+      id = byId.get(id).parent_id;
+    }
+    return id;
+  };
+  const root = rootOf(state.snapshot?.id || state.agentBase?.id);
+  const rows =
+    state.historyAll || !root
+      ? state.documents
+      : state.documents.filter((d) => rootOf(d.id) === root);
+  $("#history-scope").textContent = state.historyAll
+    ? "Show this project"
+    : "Show all local designs";
+  $("#version-history").innerHTML = rows
     .map(
       (d) =>
-        `<button data-version="${esc(d.id)}" class="${d.id === state.snapshot?.id ? "active" : ""}">${esc(d.label || d.name || d.document?.name || "Saved version")}<small>${esc(d.created_at ? new Date(d.created_at).toLocaleString(undefined, { timeZone: "Asia/Kolkata", timeZoneName: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : String(d.id).slice(-8))}</small></button>`,
+        `<button data-version="${esc(d.id)}" class="${d.id === state.snapshot?.id ? "active" : ""}">${esc(d.label || d.name || "Saved version")}<small>${esc(d.created_at ? new Date(d.created_at).toLocaleString(undefined, { timeZone: "Asia/Kolkata", timeZoneName: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : String(d.id).slice(-8))}</small></button>`,
     )
     .join("");
 }
+$("#history-scope").addEventListener("click", () => {
+  state.historyAll = !state.historyAll;
+  renderHistory();
+});
 
 async function refreshHistory() {
   const b = await api("/bootstrap");
@@ -759,6 +791,7 @@ async function undoRedo(direction) {
 
 function setTab(tab) {
   state.tab = tab;
+  updateDocumentUrl();
   $$("[data-tab]").forEach((x) =>
     x.classList.toggle("active", x.dataset.tab === tab),
   );
@@ -2230,15 +2263,25 @@ async function start() {
       .map((x) => "." + x)
       .join(",");
     await graphics;
-    const crate = new URLSearchParams(location.search).get("crate");
+    const query = new URLSearchParams(location.search);
+    const crate = query.get("crate"),
+      documentId = query.get("document"),
+      requestedView = query.get("view");
     const initial = crate
       ? await api("/from-crate/" + encodeURIComponent(crate), {})
-      : b.document;
+      : documentId
+        ? await api("/documents/" + encodeURIComponent(documentId))
+        : b.document;
     useSnapshot(initial);
     if (crate) {
-      history.replaceState(null, "", "/studio");
       await refreshHistory();
     }
+    if (
+      ["canvas", "project", "model", "sketch", "drawing", "motion"].includes(
+        requestedView,
+      )
+    )
+      setTab(requestedView);
     resizeSketch();
   } catch (e) {
     await graphics;

@@ -1,0 +1,125 @@
+{
+  "format": "forma-studio/v1",
+  "document": {
+    "name": "Foldable instrument case",
+    "features": [
+      {
+        "id": "base",
+        "type": "box",
+        "name": "Base",
+        "params": {
+          "width": 98.0,
+          "depth": 68.0,
+          "height": 4.0,
+          "cx": 0,
+          "cy": 0,
+          "z": 0.0,
+          "operation": "new_body"
+        },
+        "suppressed": false
+      },
+      {
+        "id": "front",
+        "type": "box",
+        "name": "Front",
+        "params": {
+          "width": 98.0,
+          "depth": 4.0,
+          "height": 50.0,
+          "cx": 0,
+          "cy": -32.0,
+          "z": 4.0,
+          "operation": "new_body"
+        },
+        "suppressed": false
+      },
+      {
+        "id": "back",
+        "type": "box",
+        "name": "Back",
+        "params": {
+          "width": 98.0,
+          "depth": 4.0,
+          "height": 50.0,
+          "cx": 0,
+          "cy": 32.0,
+          "z": 4.0,
+          "operation": "new_body"
+        },
+        "suppressed": false
+      },
+      {
+        "id": "left",
+        "type": "box",
+        "name": "Left",
+        "params": {
+          "width": 4.0,
+          "depth": 60.0,
+          "height": 50.0,
+          "cx": -47.0,
+          "cy": 0,
+          "z": 4.0,
+          "operation": "new_body"
+        },
+        "suppressed": false
+      },
+      {
+        "id": "right",
+        "type": "box",
+        "name": "Right",
+        "params": {
+          "width": 4.0,
+          "depth": 60.0,
+          "height": 50.0,
+          "cx": 47.0,
+          "cy": 0,
+          "z": 4.0,
+          "operation": "new_body"
+        },
+        "suppressed": false
+      }
+    ],
+    "metadata": {
+      "brief": "A small folding instrument-case mockup. Preserve at least 0.2 L usable capacity and a 160 \u00c3\u2014 120 \u00c3\u2014 80 mm closed envelope. Compare stock thicknesses, retain human editing, and inspect prescribed wall motion before preparing separate panel components. Virtual hinge hardware and load qualification remain to be designed.",
+      "source_crate_id": "studio-enclosure",
+      "source_spec": {
+        "name": "Foldable instrument case",
+        "inner_width_mm": 90.0,
+        "inner_depth_mm": 60.0,
+        "inner_height_mm": 50.0,
+        "thickness_mm": 4.0,
+        "material": "polypropylene",
+        "lid": false
+      },
+      "source_requirements": {
+        "min_capacity_l": 0.2,
+        "max_outer_width_mm": 160.0,
+        "max_outer_depth_mm": 120.0,
+        "max_outer_height_mm": 80.0,
+        "max_mass_kg": 1.0,
+        "lock_inner_dimensions": true,
+        "objective": "minimize_mass",
+        "payload_kg": 0.0,
+        "max_floor_deflection_mm": 3.0
+      },
+      "motion": {
+        "family": "enclosure_walls",
+        "max_angle_deg": 90.0,
+        "samples": 37
+      }
+    },
+    "display": {
+      "body_names": {
+        "body_001": "Base",
+        "body_002": "Front",
+        "body_003": "Back",
+        "body_004": "Left",
+        "body_005": "Right"
+      },
+      "hidden_parts": [],
+      "colors": {}
+    },
+    "annotations": []
+  },
+  "assets": {}
+}

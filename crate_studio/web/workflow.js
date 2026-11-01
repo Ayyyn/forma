@@ -79,7 +79,7 @@ export function createWorkflow(bridge) {
   $("#project-spec-fields").innerHTML = fields(specFields, "spec-");
   $("#project-req-fields").innerHTML = fields(reqFields, "req-");
   $("#motion-tab").innerHTML =
-    `<div class="motion-layout"><div class="motion-heading"><div><small>FINITE-THICKNESS MOTION</small><h1>Wall folding</h1><p id="motion-state">Build an open enclosure in Project to begin.</p></div><button id="motion-run" class="primary">Run motion study</button></div><div class="motion-settings"><label>Maximum angle <input id="motion-max" type="number" min="1" max="90" value="90"> °</label><label>Sample poses <select id="motion-samples"><option>19</option><option selected>37</option><option>73</option></select></label></div><div id="motion-viewport" aria-label="Interactive folding simulation"></div><div class="motion-controls"><button id="motion-play" disabled>▶ Play</button><label>Wall angle <input type="range" id="motion-angle" min="0" max="90" step="0.1" value="0" disabled></label><output id="motion-angle-label">0°</output><button id="motion-reset">Reset</button><button id="motion-fit">Fit</button><button id="motion-save" disabled>Save study settings</button></div><div class="motion-analysis"><div id="motion-metrics">Simulation is bound to the current enclosure definition.</div><svg id="motion-chart" viewBox="0 0 600 105" role="img" aria-label="Outside envelope through wall motion"></svg><details><summary>Model assumptions</summary><p id="motion-scope">Virtual hinges, rigid panels and prescribed outward motion. Hardware and structural behavior require separate validation.</p></details></div></div>`;
+    `<div class="motion-layout"><div class="motion-heading"><div><small>FINITE-THICKNESS MOTION</small><h1>Wall folding</h1><p id="motion-state">Build an open enclosure in Project to begin.</p></div><div class="motion-heading-actions"><button id="motion-focus">Focus view</button><button id="motion-run" class="primary">Run motion study</button></div></div><div class="motion-settings"><label>Maximum angle <input id="motion-max" type="number" min="1" max="90" value="90"> °</label><label>Sample poses <select id="motion-samples"><option>19</option><option selected>37</option><option>73</option></select></label></div><div id="motion-viewport" aria-label="Interactive folding simulation"></div><div class="motion-controls"><button id="motion-play" disabled>▶ Play</button><label>Wall angle <input type="range" id="motion-angle" min="0" max="90" step="0.1" value="0" disabled></label><output id="motion-angle-label">0°</output><button id="motion-reset">Reset</button><button id="motion-fit">Fit</button><button id="motion-save" disabled>Save study settings</button></div><div class="motion-analysis"><div id="motion-metrics">Simulation is bound to the current enclosure definition.</div><svg id="motion-chart" viewBox="0 0 600 105" role="img" aria-label="Outside envelope through wall motion"></svg><details><summary>Model assumptions</summary><p id="motion-scope">Virtual hinges, rigid panels and prescribed outward motion. Hardware and structural behavior require separate validation.</p></details></div></div>`;
   $("#canvas-tab").innerHTML =
     `<div class="canvas-toolbar"><strong>Project canvas</strong><span id="canvas-revision"></span><button id="canvas-minus" aria-label="Zoom canvas out">−</button><output id="canvas-zoom">80%</output><button id="canvas-plus" aria-label="Zoom canvas in">＋</button><button id="canvas-fit">Fit all</button></div><div id="workflow-board" tabindex="0" aria-label="Project stage canvas; drag empty space to pan, wheel to zoom"><div id="workflow-world-size"><div id="workflow-world"><svg class="workflow-connectors" width="3100" height="760" aria-hidden="true"><path d="M 450 340 H 2740" stroke="#d3c7b5" stroke-width="2" fill="none" stroke-dasharray="6 6"/></svg><div id="workflow-cards"></div></div></div></div><div class="canvas-pip"><img id="canvas-pip-image" alt="Current CAD model overview"><span>Current revision</span></div><div id="canvas-map" aria-label="Canvas minimap"><div id="canvas-map-cards"></div><div id="canvas-map-view"></div></div><div class="canvas-hint">Drag background to pan · Wheel to zoom · Shift-wheel to scroll · Double-click a stage to open</div>`;
 
@@ -479,6 +479,13 @@ export function createWorkflow(bridge) {
     updateAngle(0);
   };
   $("#motion-fit").onclick = fitMotion;
+  $("#motion-focus").onclick = () => {
+    const focused = document.body.classList.toggle("motion-focus");
+    $("#motion-focus").textContent = focused ? "Back to editors" : "Focus view";
+    resizeMotion();
+    fitMotion();
+  };
+
   $("#motion-save").onclick = () =>
     runTask(async () => {
       if (
@@ -732,6 +739,10 @@ export function createWorkflow(bridge) {
       renderCanvas();
     },
     tabChanged(tab) {
+      if (tab !== "motion") {
+        document.body.classList.remove("motion-focus");
+        $("#motion-focus").textContent = "Focus view";
+      }
       document.body.classList.toggle("canvas-focus", tab === "canvas");
       if (tab !== "motion") {
         playing = false;
