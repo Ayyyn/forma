@@ -448,7 +448,7 @@ def propose_document(
             with agent._spend_lock:
                 if estimated_spend() + reservation > agent.CAP_USD:
                     proposal["summary"] = (
-                        "Shared Forma estimated API budget reached ($5); review receipts before increasing the cap."
+                        f"Shared Forma estimated API budget reached (${agent.CAP_USD:g}); review receipts before increasing the cap."
                     )
                     break
                 # Persist full conservative reservation BEFORE network I/O, including crash cases.
