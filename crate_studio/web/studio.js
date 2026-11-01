@@ -1,3 +1,5 @@
+import { createWorkflow } from "/assets/workflow.js";
+let workflow;
 const $ = (s) => document.querySelector(s),
   $$ = (s) => [...document.querySelectorAll(s)],
   clone = (x) => JSON.parse(JSON.stringify(x));
@@ -332,6 +334,7 @@ function useSnapshot(value) {
   renderAll();
   renderConfigurations();
   if (state.measure) renderMeasurement();
+  workflow?.update(s);
 }
 
 function renderAll() {
@@ -762,6 +765,7 @@ function setTab(tab) {
   $$(".tab-panel").forEach((x) =>
     x.classList.toggle("active", x.id === tab + "-tab"),
   );
+  workflow?.tabChanged(tab);
   if (tab === "model") resize3D();
   if (tab === "sketch") {
     resizeSketch();
@@ -825,6 +829,7 @@ async function setup3D() {
       if (state.snapshot) fitView();
     }).observe($("#viewport"));
     renderer.setAnimationLoop(() => {
+      if (state.tab !== "model" || document.hidden) return;
       controls.update();
       renderer.render(scene, camera);
     });
@@ -2190,7 +2195,10 @@ document.addEventListener("keydown", (e) => {
     undoRedo(e.shiftKey ? "redo" : "undo");
   }
   if (text) return;
-  if (e.key.toLowerCase() === "f") fitView();
+  if (e.key.toLowerCase() === "f") {
+    if (state.tab === "canvas") workflow.fitCanvas();
+    else fitView();
+  }
   if (["1", "2", "3"].includes(e.key))
     fitView({ 1: "front", 2: "top", 3: "right" }[e.key]);
   if (e.key === "Escape") {
@@ -2240,4 +2248,48 @@ async function start() {
   }
 }
 
+workflow = createWorkflow({
+  getState: () => state,
+  api,
+  toast,
+  setTab,
+  modelImage: () => {
+    if (!renderer || !scene || !camera) return null;
+    try {
+      renderer.render(scene, camera);
+      return renderer.domElement.toDataURL("image/png");
+    } catch {
+      return null;
+    }
+  },
+  save: async (document, label) => {
+    if (
+      state.busy ||
+      state.pending ||
+      state.inspectorDirty ||
+      state.agentPreview
+    )
+      throw new Error(
+        "Finish pending CAD edits before saving project settings.",
+      );
+    const parent = state.snapshot?.id;
+    setBusy(true);
+    try {
+      const result = await api("/documents", {
+        document,
+        parent_id: parent,
+        label,
+      });
+      if (state.snapshot?.id !== parent)
+        throw new Error(
+          "Project changed while saving; the new revision is retained in history.",
+        );
+      useSnapshot(result);
+      await refreshHistory();
+      return result;
+    } finally {
+      setBusy(false);
+    }
+  },
+});
 start();

@@ -22,11 +22,14 @@ Manual editing, deterministic optimization and exports work without credentials.
 - Editable feature history, revisions, undo/redo and named configurations.
 - Enclosure stock optimization with selectable feasible alternatives.
 - Geometry-derived drawings; STEP, STL, DXF, SVG, PDF and portable JSON exports.
-- Enclosure checks bound to the imported panel definition; geometry edits mark requirements stale.
+- Shared brief, enclosure specification and requirements inside Studio; deterministic panel regeneration and revision-bound checks.
+- Finite-thickness wall folding with local playback, sampled overlap checks and envelope plots.
+- Large stage canvas with pan/zoom, minimap and model overview.
+- Separate flat panel STEP/STL components and revision-bound workflow reports in the export package.
 
-[Studio capabilities and limits](docs/FORMA_STUDIO.md) · [Implementation plan](docs/FORMA_BUILD_PLAN.md) · [Demo](docs/FORMA_DEMO.md)
+[Shared workflow and physical mockup guide](docs/FORMA_WORKFLOW.md) · [Studio capabilities and limits](docs/FORMA_STUDIO.md) · [Implementation plan](docs/FORMA_BUILD_PLAN.md) · [Demo](docs/FORMA_DEMO.md)
 
-The supported enclosure load check is an ideal beam-deflection screen. General FEA, finite-thickness folding and physical validation are still pending. The separate `continuum` prototype contains ideal Miura/accordion kinematics; it is not yet integrated with Studio.
+The supported enclosure load check is an ideal beam-deflection screen. General FEA, engineered hinge hardware and physical validation are still pending. Wall folding is a prescribed rigid-panel motion with sampled thickness-aware overlap checks. The separate `continuum` prototype contains ideal Miura/accordion kinematics; it is not yet integrated with Studio.
 
 ## Verify
 

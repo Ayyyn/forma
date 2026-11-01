@@ -28,6 +28,20 @@ Receipt: `output/forma/performance-2026-11-01.json`. Run `python -m research.pro
 
 These timings exclude interpreter startup, HTTP, browser rendering and model inference. They measure one simple fixture, not a broad performance benchmark or competitor comparison.
 
-## Remaining scope
+## Integrated workflow increment
 
-Shared enclosure editing inside Studio, integrated finite-thickness folding, the stage canvas, external evaluation and physical printing are still pending. Follow [the build plan](FORMA_BUILD_PLAN.md). This increment does not complete the full product.
+Shared Project editing now regenerates enclosure panels, requirements and drawings into one Studio revision. Briefs and motion settings persist in portable projects. The AI planner has a bounded global enclosure patch action that preserves requirements and rejects failing revisions. Arbitrary edits remain explicitly stale rather than inheriting source checks.
+
+Finite-thickness wall motion includes adjustable angle/sample count, local playback and scrubbing, envelope plots, sampled overlap markers, revision invalidation and saved configuration. Independent transformed OpenCascade solids agree with computed bounds and overlap checks at five poses. A deliberately incorrect hinge location is detected. The large stage canvas includes pan/zoom, scrollbars, fit-all, minimap, model overview and stage navigation; narrow-screen placement was corrected during browser QA.
+
+The export bundle includes `workflow-report.json`, current/stale requirements and motion state, hashes, and separate flattened enclosure panel STEP/STL files with mesh verification. The physical mockup guide is [FORMA_WORKFLOW.md](FORMA_WORKFLOW.md).
+
+Verification: 76 unit tests (41 Studio, 35 enclosure); 37 Studio HTTP checks; 19 shared-workflow HTTP checks including panel files, export hashes and portable context. Final receipts are under `output/forma/workflow/`. No model calls were made by these checks. After explicit approval for the synthetic payload, the live global-thickness task passed all seven checks: ready proposal, thickness update, dimensions/requirements/brief preserved, current qualification and applied revision. One real muse-wonder-1.0 response, estimated $0.028588. Receipt: `output/forma/workflow/live-v1/results.json`. This is one constructed integration task, not an external benchmark.
+
+Latest five-sample default-plate backend profile: uncached median 183.760 ms, cached median 2.254 ms. This remains one local fixture, excluding HTTP, startup, browser rendering and model inference. It establishes no competitor comparison.
+
+Browser checks: manual thickness change, visible engineering failure, feasible alternative regeneration, folding at 90°, saved configuration, 19-pose/60° configuration, play/pause and fit, revision canvas, fit-all and responsive layout. The physical test remains pending.
+
+## Remaining product scope
+
+Physical measurements, engineered hinges, general origami/mechanism solving, general FEA, photo interpretation, external benchmark evaluation and production deployment are still pending. The stage canvas currently has fixed stage positions and session-local navigation. Follow [the build plan](FORMA_BUILD_PLAN.md).

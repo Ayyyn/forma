@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Forma Studio — Parametric CAD</title>
     <link rel="stylesheet" href="/assets/studio.css" />
+    <link rel="stylesheet" href="/assets/workflow.css" />
     <script type="importmap">
       { "imports": { "three": "/assets/vendor/three.module.js" } }
     </script>
@@ -83,12 +84,18 @@
           ><button data-drawer="inspector">Properties ⚙</button>
         </div>
         <nav class="view-tabs">
-          <button data-tab="model" class="active">◇ Model</button
+          <button data-tab="canvas">▦ Canvas</button
+          ><button data-tab="project">Project</button
+          ><button data-tab="model" class="active">◇ Model</button
           ><button data-tab="sketch">▱ Sketch</button
           ><button data-tab="drawing">▧ Drawing</button
+          ><button data-tab="motion">↻ Motion</button
           ><span id="body-count">0 solids</span>
         </nav>
         <div class="stage">
+          <section id="canvas-tab" class="tab-panel"></section>
+          <section id="project-tab" class="tab-panel"></section>
+          <section id="motion-tab" class="tab-panel"></section>
           <section id="model-tab" class="tab-panel active">
             <div class="stage-caption">
               <span>PARAMETRIC WORKSPACE</span>

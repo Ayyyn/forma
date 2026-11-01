@@ -4,6 +4,13 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from functools import lru_cache
 from .workspace_requirements import enclosure_features, requirement_state
+from .workspace_workflow import (
+    revise_enclosure,
+    motion_study,
+    validate_motion,
+    geometry_signature,
+    export_panel_pack,
+)
 import base64
 import csv
 import hashlib
@@ -136,6 +143,13 @@ def normalize_document(value):
     doc.setdefault("metadata", {})
     if not isinstance(doc["display"], dict) or not isinstance(doc["metadata"], dict):
         raise ValueError("Document display and metadata must be objects")
+    if "motion" in doc["metadata"]:
+        doc["metadata"]["motion"] = validate_motion(doc["metadata"]["motion"])
+    if (
+        not isinstance(doc["metadata"].get("brief", ""), str)
+        or len(doc["metadata"].get("brief", "")) > 6000
+    ):
+        raise ValueError("Project brief must contain at most 6000 characters")
     for key in ["color"]:
         if key in doc["display"] and not re.fullmatch(
             r"#[0-9a-fA-F]{6}", str(doc["display"][key])
@@ -167,7 +181,22 @@ def normalize_document(value):
 
 
 def build_key(doc):
-    return json.dumps(normalize_document(doc), sort_keys=True, allow_nan=False)
+    normalized = normalize_document(doc)
+    return json.dumps(
+        {"features": normalized["features"]}, sort_keys=True, allow_nan=False
+    )
+
+
+def drawing_key(doc):
+    return json.dumps(
+        {
+            "features": doc["features"],
+            "name": doc["name"],
+            "annotations": doc["annotations"],
+        },
+        sort_keys=True,
+        allow_nan=False,
+    )
 
 
 @lru_cache(maxsize=20)
@@ -178,7 +207,7 @@ def built(encoded):
 @lru_cache(maxsize=20)
 def projected(encoded):
     doc = json.loads(encoded)
-    return drawing_svg(doc, built(encoded)["parts"])
+    return drawing_svg(doc, built(build_key(doc))["parts"])
 
 
 def snapshot(document, cad_lock):
@@ -193,7 +222,7 @@ def snapshot(document, cad_lock):
         drawing_error = None
         try:
             sheet = (
-                projected(build_key(doc))
+                projected(drawing_key(doc))
                 if valid
                 else '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800"><rect width="1200" height="800" fill="white"/><text x="50" y="65" font-family="Arial" font-size="25">'
                 + html.escape(doc["name"])
@@ -267,6 +296,7 @@ def snapshot(document, cad_lock):
     return {
         "document": doc,
         "requirements_state": requirements,
+        "geometry_signature": geometry_signature(doc),
         "geometry": {
             "parts": meshes,
             "face_meshes": result["face_meshes"],
@@ -401,6 +431,16 @@ class SaveBody(DocumentBody):
     label: str = Field(default="Edit", max_length=150)
 
 
+class EnclosureBody(DocumentBody):
+    spec: dict
+    requirements: dict
+    replace_geometry: bool = False
+
+
+class MotionBody(DocumentBody):
+    config: dict | None = None
+
+
 class CursorBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_id: str
@@ -442,6 +482,25 @@ def create_router(cad_lock, crate_reader=None):
     @router.post("/preview")
     def preview(body: DocumentBody):
         return snapshot(body.document, cad_lock)
+
+    @router.post("/enclosure/preview")
+    def enclosure_preview(body: EnclosureBody):
+        return snapshot(
+            revise_enclosure(
+                body.document, body.spec, body.requirements, body.replace_geometry
+            ),
+            cad_lock,
+        )
+
+    @router.post("/enclosure/options")
+    def enclosure_options(body: EnclosureBody):
+        from .engine import optimize
+
+        return optimize(body.spec, body.requirements)
+
+    @router.post("/motion")
+    def simulate_motion(body: MotionBody):
+        return motion_study(normalize_document(body.document), body.config)
 
     @router.get("/documents")
     def documents():
@@ -818,6 +877,8 @@ def create_router(cad_lock, crate_reader=None):
                     "workspace_geometry.py",
                     "workspace_drawing.py",
                     "workspace_server.py",
+                    "workspace_requirements.py",
+                    "workspace_workflow.py",
                 ]
             )
         ).hexdigest()[:12]
@@ -832,6 +893,27 @@ def create_router(cad_lock, crate_reader=None):
                 parts = built(build_key(value["document"]))["parts"]
                 drawing = export_drawings(value["document"], parts, folder)
                 portable = portable_document(value["document"])
+                workflow = {
+                    "revision_id": id,
+                    "geometry_signature": value["geometry_signature"],
+                    "requirements": value["requirements_state"],
+                    "motion": {"status": "not_configured"},
+                }
+                if value["requirements_state"]["status"] == "current":
+                    workflow["panel_pack"] = export_panel_pack(
+                        value["document"], folder
+                    )
+                if "motion" in value["document"]["metadata"]:
+                    try:
+                        workflow["motion"] = {
+                            "status": "current",
+                            "study": motion_study(value["document"]),
+                        }
+                    except ValueError as error:
+                        workflow["motion"] = {"status": "stale", "detail": str(error)}
+                (folder / "workflow-report.json").write_text(
+                    json.dumps(workflow, indent=2, allow_nan=False), encoding="utf-8"
+                )
                 with (folder / "body-list.csv").open(
                     "w", newline="", encoding="utf-8"
                 ) as body_csv:

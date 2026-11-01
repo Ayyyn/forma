@@ -59,6 +59,7 @@ PARAMS = {
 SYSTEM = """You are Forma Studio's bounded CAD feature-history planner. Return only JSON, never executable code.
 Schema exactly: {"summary":string,"status":"ready"|"clarify","operations":array,"questions":array of strings,"evidence":array of {"quote":string}}.
 Operations: {"action":"add","feature":{"id":unique string,"type":supported type,"name":string,"params":object,"suppressed":false}}; {"action":"update","id":existing id,"params":changed parameters only,"name":optional string}; {"action":"suppress","id":existing id,"value":boolean}; {"action":"delete","id":existing id}.
+For a supported enclosure with metadata.source_spec and metadata.source_requirements, a global panel thickness, material or clear-dimension revision MUST use a single operation {"action":"enclosure","spec":{changed fields only}}. This deterministically regenerates all panels and retains the requirements, brief and motion settings. Allowed spec fields: name,inner_width_mm,inner_depth_mm,inner_height_mm,thickness_mm,material,lid. Preserve unmentioned fields. Do not use individual box edits for global enclosure changes. This action requires the original supported panel definition and cannot discard custom edits. No requirement relaxation or optimizer action is available here; use Project for those. If retained constraints fail, clarify the conflict rather than changing the requirements.
 Preserve unmentioned features, parameters, annotation and display state, asset IDs and design intent. Operations apply in sequence to the approved base document, not previous rejected proposals. Add appends a feature. Never delete or suppress existing work to make an unrelated operation pass. Quotes must be exact nonempty substrings of the current user instruction supporting your changes. Evidence establishes provenance, not mechanical validation.
 All distances mm, rotations degrees. Convert explicitly given units (inch=25.4 mm). Ask when units, dimensions, target or intent are ambiguous. Boxes are XY centred, bottom z=0; cylinders extrude along +Z. box(width,depth,height), cylinder(radius,height), sketch_extrude(shape rectangle/circle/polyline,width,depth or radius or points:[[x,y]],height,cx,cy,z,operation add/cut/new_body). x/y aliases accepted for cx/cy. Primitives add union by default; new_body retains separate components.
 cut_hole(radius,depth,x,y,z) removes a +Z cylinder. fillet(radius,selector vertical/all), chamfer(distance,selector vertical/all); for selected edges use part_id and edge_indices from selected_topology_context instead of a broad selector. transform(translation:[x,y,z],rotation:[rx,ry,rz],optional target_part_id body_001 etc) rotates about global origin X then Y then Z before translation. linear_pattern(count,spacing:[x,y,z],fuse=false) duplicates current bodies, including original. mirror(plane XY/XZ/YZ,keep_original=true). union() joins all bodies; cut(target:int,tool:int) subtracts two zero-based body indices. import_step(asset_id) may only reuse an existing imported asset reference; cannot invent files or paths. mate(source_part_id,source_face:int,target_part_id,target_face:int,offset,mode coincident/parallel) supports planar faces only; use only face ordinals supplied in context, never guess. Coincident aligns opposing normals and face centers with offset along target normal. Parallel only rotates, offset must zero. This is sequential alignment, not a simultaneous mate constraint solver.
@@ -157,6 +158,43 @@ def apply_plan(base_doc, plan, prompt, asset_loader=None, geometry_lock=None):
         if not isinstance(op, dict):
             raise ValueError("Operation must be an object")
         action = op.get("action")
+        if action == "enclosure":
+            from .workspace_workflow import revise_enclosure
+            from .engine import evaluate, DEFAULT_SPEC
+
+            if (
+                len(plan["operations"]) != 1
+                or set(op) != {"action", "spec"}
+                or not isinstance(op["spec"], dict)
+                or set(op["spec"]) - set(DEFAULT_SPEC)
+            ):
+                raise ValueError(
+                    "Enclosure changes require a single bounded specification patch"
+                )
+            metadata = doc.get("metadata", {})
+            if not metadata.get("source_spec") or not metadata.get(
+                "source_requirements"
+            ):
+                raise ValueError("No supported enclosure specification is attached")
+            before = metadata["source_spec"]
+            after = {**before, **op["spec"]}
+            checked = evaluate(after, metadata["source_requirements"])
+            if not checked["passed"]:
+                failed = ", ".join(
+                    c["label"] for c in checked["checks"] if c["status"] == "fail"
+                )
+                raise ValueError(
+                    "Requested enclosure revision fails retained requirements: "
+                    + failed
+                )
+            doc = revise_enclosure(doc, after, metadata["source_requirements"])
+            changes.append(
+                "Regenerate enclosure: "
+                + "; ".join(
+                    f"{key}: {before.get(key)} → {after[key]}" for key in op["spec"]
+                )
+            )
+            continue
         if action == "add":
             if set(op) != {"action", "feature"}:
                 raise ValueError("Invalid add operation")

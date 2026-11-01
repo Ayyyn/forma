@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from crate_studio.engine import DEFAULT_SPEC, DEFAULT_REQUIREMENTS, evaluate
 from crate_studio.workspace_requirements import enclosure_features, requirement_state
-from crate_studio.workspace_server import DEFAULT_DOCUMENT, snapshot, projected
+from crate_studio.workspace_server import DEFAULT_DOCUMENT, snapshot, projected, built
 
 
 class RequirementBindingTests(unittest.TestCase):
@@ -63,15 +63,23 @@ class RequirementBindingTests(unittest.TestCase):
         lock = threading.RLock()
         current = snapshot(self.doc, lock)
         self.assertEqual(current["requirements_state"]["status"], "current")
-        self.assertTrue(any(c["id"] == "requirement_capacity" for c in current["checks"]))
+        self.assertTrue(
+            any(c["id"] == "requirement_capacity" for c in current["checks"])
+        )
         self.doc["features"][0]["params"]["width"] += 1
         changed = snapshot(self.doc, lock)
         self.assertTrue(changed["passed"])
         self.assertEqual(changed["requirements_state"]["status"], "stale")
-        self.assertFalse(any(c["id"].startswith("requirement_") for c in changed["checks"]))
-        self.assertEqual(next(c for c in changed["checks"] if c["id"] == "crate_scope")["status"], "stale")
+        self.assertFalse(
+            any(c["id"].startswith("requirement_") for c in changed["checks"])
+        )
+        self.assertEqual(
+            next(c for c in changed["checks"] if c["id"] == "crate_scope")["status"],
+            "stale",
+        )
 
     def test_drawing_cache_reuses_projection_but_updates_notes(self):
+        built.cache_clear()
         projected.cache_clear()
         doc = deepcopy(DEFAULT_DOCUMENT)
         lock = threading.RLock()
@@ -96,6 +104,22 @@ class RequirementBindingTests(unittest.TestCase):
             updated = snapshot(doc, lock)
             self.assertEqual(render.call_count, 2)
             self.assertIn("Changed note", updated["drawing_svg"])
+
+    def test_brief_and_display_edits_reuse_geometry_and_projection(self):
+        built.cache_clear()
+        projected.cache_clear()
+        doc = deepcopy(DEFAULT_DOCUMENT)
+        lock = threading.RLock()
+        original = snapshot(doc, lock)
+        misses = built.cache_info().misses
+        drawing_misses = projected.cache_info().misses
+        doc["metadata"]["brief"] = "New project context"
+        doc["display"]["body_names"] = {"body_001": "Named body"}
+        changed = snapshot(doc, lock)
+        self.assertEqual(built.cache_info().misses, misses)
+        self.assertEqual(projected.cache_info().misses, drawing_misses)
+        self.assertEqual(changed["geometry"]["parts"][0]["name"], "Named body")
+        self.assertNotEqual(original["geometry"]["parts"][0]["name"], "Named body")
 
 
 if __name__ == "__main__":

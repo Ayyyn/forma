@@ -387,10 +387,18 @@ def main(output=None):
             indent=2,
         )
     )
+    return result
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--directory", type=Path)
     args = parser.parse_args()
-    main(args.directory)
+    pointer = ROOT / "output/forma/studio/current.json"
+    original = pointer.read_bytes() if pointer.exists() else None
+    result = main(args.directory)
+    if (
+        original is not None
+        and json.loads(pointer.read_text())["id"] == result["converted_id"]
+    ):
+        pointer.write_bytes(original)

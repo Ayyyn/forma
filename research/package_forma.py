@@ -27,6 +27,12 @@ def main():
             "research/verify_studio_live.py",
             "research/fetch_studio_assets.py",
             "research/studio_report.py",
+            "research/profile_forma.py",
+            "research/verify_forma_workflow.py",
+            "research/verify_forma_workflow_live.py",
+            "docs/FORMA_BUILD_PLAN.md",
+            "docs/FORMA_PROGRESS.md",
+            "docs/FORMA_WORKFLOW.md",
         ]
     ]
     files += [

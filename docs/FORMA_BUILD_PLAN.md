@@ -9,14 +9,18 @@ Updated November 1, 2026. Product direction is fixed: an editable CAD workflow w
 - Imported enclosure requirements: recompute checks while the source panel geometry matches; mark stale after resizing, suppression, deletion, added features or movement. Presentation edits preserve qualification. Returning to the original definition restores current checks.
 - Cache drawing projections for repeated snapshots, invalidating with document changes. Informational checks no longer display success ticks.
 
-## Next increments and acceptance criteria
+## Integrated workflow increment
 
-1. **Shared project workflow.** Link brief, requirements, alternatives, CAD, simulation and drawings by revision. No stale result can appear current. Add supported enclosure parameter editing directly inside Studio, with deterministic panel regeneration.
-2. **Interactive performance.** Measure browser interaction, API, CAD regeneration, drawings and model inference separately. Cancel superseded previews, debounce parameter edits, move projections out of the critical editing path. Target under 100 ms for local interaction and under 1 s for representative simple geometry updates; measure before making speed claims.
-3. **Folding.** Integrate one supported panel/hinge family, with motion limits, thickness-aware clearance screening and printable components. Verify against an independent kinematic reference. Ideal Miura/accordion remains labeled with its zero-thickness assumptions.
-4. **Project canvas.** Warm neutral stage canvas, left-to-right workflow, minimap, model/drawing focus modes and persistent assistant context. Keyboard and narrow-screen workflows remain usable.
-5. **Evaluation.** Freeze a small external CAD task subset after checking compatibility and licenses. Publish task selection, failures, adaptations and fixed model budgets. Add a separate 20-task revision suite and model/call-cost comparison. No official benchmark claim for adapted tasks.
-6. **Physical demo.** For November 2: a small printer calibration and hinge/clearance specimen before a full assembly; record actual dimensions, print settings and failures. Physical results stay pending until measured.
+Delivered: shared Project editing and regeneration, bounded AI enclosure patches, finite-thickness wall motion with adjustable sampling and local playback, revision-bound study settings and export reports, separate flat panel components, and the large stage canvas with minimap and model overview. Engineering scope is documented in [FORMA_WORKFLOW.md](FORMA_WORKFLOW.md). General origami, engineered hinge hardware and physical validation remain separate work.
+
+## Product hardening and acceptance criteria
+
+1. **Shared project workflow — delivered for enclosures.** Brief, requirements, alternatives, panel CAD, motion settings and drawings share a revision. Further work: additional design families and richer constraint editing without losing custom features.
+2. **Interactive performance — initial improvements delivered.** Geometry and drawing caches have separate inputs; brief/display changes reuse both; hidden model rendering pauses. Next: browser-level latency profiles, superseded manual-preview cancellation and incremental regeneration for larger models. Targets remain under 100 ms for local interaction and under 1 s for representative simple geometry updates; no broad speed claim yet.
+3. **Folding — wall study delivered.** Thickness-aware rectangular panel motion, editable angle/sample count, overlap checks, playback and export report. Remaining: engineered hinges, contact/load behavior and physical calibration. Ideal Miura/accordion remains separate and labeled with zero-thickness assumptions.
+4. **Project canvas — delivered.** Warm neutral left-to-right stages, minimap, model overview, stage navigation and focused editors. Remaining: arbitrary stage placement, saved navigation and canvas annotations.
+5. **Evaluation — pending.** Freeze a small external CAD subset after checking compatibility and licenses. Publish selection, failures, adaptations and fixed model budgets. Add a separate 20-task revision suite and equal-budget model comparison. No official benchmark claim for adapted tasks.
+6. **Physical demo — pending.** Separate flat panel STEP/STL files and the mockup protocol are delivered. For November 2, print a thickness/hinge coupon before the complete assembly, then retain measurements, print settings and failures.
 
 ## Release gates
 

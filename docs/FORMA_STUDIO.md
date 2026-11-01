@@ -11,7 +11,7 @@ Studio is a bounded CAD editor built on OpenCascade. It implements the operation
 | Solid features | Boxes, cylinders, holes, pockets, booleans, fillets, chamfers, mirror, linear pattern | Invalid operations stop downstream regeneration |
 | Direct editing | Planar face push/pull on native or imported STEP geometry; selected-edge fillet/chamfer | No curved-face offsets or arbitrary surface deformation |
 | Manipulation | Genuine 3D translation handles, numeric translation/rotation | Rotations use the global origin, followed by translation |
-| Assembly | Separate bodies, placement, sequential planar-face alignment, offsets and interference checks | No simultaneous multi-mate solver or kinematic mechanism simulation |
+| Assembly | Separate bodies, placement, sequential planar-face alignment, offsets and interference checks | No simultaneous multi-mate solver; the separate Motion tab supports prescribed enclosure wall folding |
 | Inspection | Face area, edge length, point distances, exact BREP distances and planar normal angles | Picked-point distances follow tessellated hit positions; exact results are labeled separately |
 | Drawings | BREP projections, hidden lines, measured overall dimensions and editable/movable text notes | Reference annotations cannot override measured geometry; no GD&T or production release |
 | Projects | Revisions, undo/redo, named configurations, visibility, colors and portable source | Local single-user workflow, not PLM |
@@ -51,3 +51,7 @@ The HTTP harness uses constructed fixtures and real CAD operations, with no mode
 Regressions cover imported filleted plates with holes surviving face offsets, cleanup preserving valid volume, and triangulation not inflating drawing dimensions. Earlier failing attempts remain in `http-v1` and `http-v2`; the second failure was the harness's HTTP method, not a CAD/model failure.
 
 Previous-work attribution remains in `crate_studio/README.md`. TransformControls matches bundled Three.js 0.170.0 and retains its MIT license and download receipt.
+
+## Shared workflow and folding
+
+Project, Canvas and Motion now share the Studio revision. See [the workflow guide](FORMA_WORKFLOW.md) for thickness propagation, finite-thickness wall motion, stage navigation, export reports and a physical mockup protocol. The wall study uses virtual hinges and sampled OBB overlap checks; it does not model hardware or loads. Brief/display changes reuse cached geometry and drawings; annotation changes invalidate drawings while reusing geometry.

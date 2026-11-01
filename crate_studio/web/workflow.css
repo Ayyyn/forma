@@ -1,0 +1,436 @@
+:root {
+  --canvas-paper: #f4f0e8;
+  --canvas-ink: #514b42;
+}
+.view-tabs {
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.view-tabs button {
+  white-space: nowrap;
+  padding: 0 12px;
+}
+.workflow-page {
+  height: 100%;
+  overflow: auto;
+  padding: 24px;
+  background: #f7f5f0;
+}
+.workflow-heading,
+.motion-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.workflow-heading small,
+.motion-heading small,
+.workflow-stage-card > small {
+  letter-spacing: 1.5px;
+  font-size: 9px;
+  color: #887b68;
+}
+.workflow-heading h1,
+.motion-heading h1 {
+  font-size: 23px;
+  font-weight: 500;
+  color: #514b42;
+  margin: 6px 0 8px;
+}
+.workflow-heading p,
+.motion-heading p {
+  color: #7c766b;
+  font-size: 11px;
+  margin: 0;
+  line-height: 1.5;
+}
+.project-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.project-card {
+  border: 1px solid #e3ddd2;
+  background: #fffefa;
+  border-radius: 10px;
+  padding: 20px;
+}
+.project-card h2 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 18px;
+  color: #554d42;
+}
+.project-card h2:not(:first-child) {
+  margin-top: 24px;
+}
+.project-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+}
+.project-card textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 90px;
+  border: 1px solid #ddd8ce;
+  border-radius: 5px;
+  padding: 10px;
+  line-height: 1.5;
+  background: #fff;
+  color: #494b51;
+}
+.project-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6f685e;
+  margin: 10px 0;
+}
+.workflow-scope {
+  font-size: 10px;
+  line-height: 1.6;
+  color: #8b8173;
+}
+.project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.project-actions label {
+  flex-basis: 100%;
+}
+#project-message {
+  color: #657d64;
+  line-height: 1.5;
+  min-height: 18px;
+}
+#project-message.error-note {
+  color: #ac5c43;
+}
+.workflow-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+.workflow-options small {
+  color: #8b8173;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.workflow-options p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.motion-layout {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f5f2ec;
+}
+.motion-heading {
+  padding: 20px 24px 0;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+.motion-settings {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 6px 24px;
+  font-size: 10px;
+  color: #887b68;
+}
+.motion-settings input {
+  width: 55px;
+  padding: 4px;
+  border: 1px solid #dcd2c1;
+  border-radius: 4px;
+}
+.motion-settings select {
+  padding: 4px;
+  border: 1px solid #dcd2c1;
+  border-radius: 4px;
+  background: white;
+}
+#motion-viewport {
+  flex: 1;
+  min-height: 100px;
+  overflow: hidden;
+}
+#motion-viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.motion-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  background: #fffdf8;
+  border-block: 1px solid #e5ded1;
+}
+.motion-controls label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 150px;
+  font-size: 11px;
+}
+.motion-controls input {
+  flex: 1;
+  width: 100px;
+  accent-color: #928266;
+}
+.motion-controls output {
+  font-variant-numeric: tabular-nums;
+  width: 40px;
+}
+.motion-analysis {
+  padding: 10px 18px;
+  background: #fffefa;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #736b5e;
+  max-height: 170px;
+  overflow: auto;
+}
+.motion-analysis p {
+  line-height: 1.6;
+}
+#motion-chart {
+  width: 100%;
+  height: 85px;
+  display: block;
+}
+.canvas-focus .studio-layout {
+  grid-template-columns: 0 minmax(300px, 1fr) 0;
+}
+.canvas-focus .main-panel {
+  grid-column: 2;
+  min-width: 0;
+}
+.canvas-focus .mobile-toolbar {
+  display: none;
+}
+.canvas-focus .explorer,
+.canvas-focus .inspector {
+  visibility: hidden;
+  overflow: hidden;
+}
+#canvas-tab {
+  background: var(--canvas-paper);
+  color: var(--canvas-ink);
+}
+.canvas-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fffdf6f2;
+  border: 1px solid #dfd7c9;
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 2px 8px #59482d08;
+}
+.canvas-toolbar strong {
+  font-weight: 550;
+}
+.canvas-toolbar > span {
+  margin-right: auto;
+  color: #998d7b;
+  font: 9px var(--mono);
+}
+.canvas-toolbar output {
+  width: 36px;
+  text-align: center;
+  font-size: 10px;
+}
+#workflow-board {
+  position: absolute;
+  inset: 64px 0 0;
+  overflow: auto;
+  cursor: grab;
+  touch-action: none;
+  background-image: radial-gradient(#c7bcaa 0.7px, transparent 0.7px);
+  background-size: 20px 20px;
+}
+#workflow-board.panning {
+  cursor: grabbing;
+  user-select: none;
+}
+#workflow-world {
+  position: relative;
+  width: 3100px;
+  height: 760px;
+  transform-origin: 0 0;
+}
+.workflow-connectors {
+  position: absolute;
+  pointer-events: none;
+}
+.workflow-stage-card {
+  position: absolute;
+  width: 420px;
+  min-height: 350px;
+  padding: 25px;
+  border-radius: 12px;
+  border: 1px solid #dcd2c1;
+  background: #fffdf8;
+  box-shadow: 0 8px 24px #6e5d3e09;
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+}
+.workflow-stage-card h2 {
+  margin: 12px 0 18px;
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: -0.5px;
+}
+.workflow-card-content {
+  flex: 1;
+  min-height: 180px;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.workflow-card-content p {
+  margin: 8px 0 16px;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.workflow-stage-card button {
+  align-self: flex-start;
+  color: #78674e;
+  background: #f8f4eb;
+  border-color: #e7decd;
+  font-size: 13px;
+}
+.canvas-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #eaf0e6;
+  font-size: 12px;
+  color: #637454;
+}
+.canvas-badge.warning {
+  background: #f7e8cd;
+  color: #9b7039;
+}
+.canvas-model-image,
+.canvas-drawing-image {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
+  border-radius: 5px;
+  background: #f6f5f0;
+}
+.canvas-pip {
+  position: absolute;
+  bottom: 25px;
+  left: 18px;
+  width: 150px;
+  height: 110px;
+  background: #fffdfa;
+  border: 1px solid #d9d0c0;
+  border-radius: 7px;
+  box-shadow: 0 5px 16px #4c403215;
+  pointer-events: none;
+  overflow: hidden;
+}
+.canvas-pip img {
+  width: 100%;
+  height: 87px;
+  object-fit: cover;
+}
+.canvas-pip span {
+  display: block;
+  font-size: 9px;
+  padding: 0 7px;
+  color: #8b806e;
+}
+#canvas-map {
+  position: absolute;
+  right: 22px;
+  bottom: 25px;
+  width: 210px;
+  height: 110px;
+  border: 1px solid #d9d0c0;
+  border-radius: 7px;
+  background: #fffcf5f2;
+  box-shadow: 0 5px 16px #4c403215;
+  cursor: crosshair;
+  overflow: hidden;
+}
+#canvas-map-cards span {
+  position: absolute;
+  background: #d8d0c2;
+  border-radius: 2px;
+}
+#canvas-map-view {
+  position: absolute;
+  border: 1.5px solid #9a7c50;
+  background: #bca68215;
+  pointer-events: none;
+}
+.canvas-hint {
+  position: absolute;
+  bottom: 7px;
+  left: 185px;
+  right: 250px;
+  text-align: center;
+  pointer-events: none;
+  font-size: 9px;
+  color: #a3947e;
+}
+@media (max-width: 1100px) {
+  .project-columns {
+    grid-template-columns: 1fr;
+  }
+  .canvas-hint {
+    display: none;
+  }
+  .view-tabs > span {
+    display: none;
+  }
+}
+@media (max-width: 650px) {
+  .workflow-page {
+    padding: 14px;
+  }
+  .project-fields {
+    grid-template-columns: 1fr;
+  }
+  .canvas-pip {
+    display: none;
+  }
+  #canvas-map {
+    width: 145px;
+    height: 80px;
+  }
+  .motion-heading {
+    padding: 12px;
+  }
+  .canvas-toolbar > span {
+    display: none;
+  }
+  .canvas-toolbar strong {
+    margin-right: auto;
+  }
+}
