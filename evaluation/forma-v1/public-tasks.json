@@ -1,0 +1,240 @@
+[
+  {
+    "id": "aluminum_extrusion_20x20x60_5_bore",
+    "prompt": "Create a simple aluminum-extrusion-like bar segment.\n\nRequirements:\n- Outer body is a 20.0 x 20.0 mm square prism, length 60.0 mm.\n- Axis is global Z.\n- Bottom face lies on z=0 and the part is entirely in z>=0.\n- Through-bores run parallel to +Z over full length:\n  - one center bore: diameter 5.0 mm at (x, y) = (0, 0)\n  - four bores: diameter 3.0 mm at (±7.0, 0) and (0, ±7.0)\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create a simple aluminum-extrusion-like bar segment.\n\nRequirements:\n- Outer body is a 20.0 x 20.0 mm square prism, length 60.0 mm.\n- Axis is global Z.\n- Bottom face lies on z=0 and the part is entirely in z>=0.\n- Through-bores run parallel to +Z over full length:\n  - one center bore: diameter 5.0 mm at (x, y) = (0, 0)\n  - four bores: diameter 3.0 mm at (±7.0, 0) and (0, ±7.0)\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "medium",
+    "document": {
+      "name": "aluminum extrusion 20x20x60 5 bore",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "width_mm": 20.0,
+      "depth_mm": 20.0,
+      "length_mm": 60.0,
+      "center_bore_d_mm": 5.0,
+      "outer_bore_d_mm": 3.0,
+      "top_z_mm": 60.0,
+      "min_z_mm": 0.0
+    },
+    "reference_geometry_gate": false
+  },
+  {
+    "id": "box_30x20x10_z_plus",
+    "prompt": "Create one rectangular box.\n\nRequirements:\n- Dimensions: 30.0 mm (X) x 20.0 mm (Y) x 10.0 mm (Z).\n- Faces aligned with global axes.\n- Bottom face lies on z=0 and the part is entirely in z>=0.\n- Center on X/Y is at (0, 0).\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create one rectangular box.\n\nRequirements:\n- Dimensions: 30.0 mm (X) x 20.0 mm (Y) x 10.0 mm (Z).\n- Faces aligned with global axes.\n- Bottom face lies on z=0 and the part is entirely in z>=0.\n- Center on X/Y is at (0, 0).\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "easy",
+    "document": {
+      "name": "box 30x20x10 z plus",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "size_x_mm": 30.0,
+      "size_y_mm": 20.0,
+      "size_z_mm": 10.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 10.0,
+      "center_x_mm": 0.0,
+      "center_y_mm": 0.0,
+      "volume_mm3": 6000.0
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "cube_20mm_z_minus",
+    "prompt": "Create one solid cube.\n\nRequirements:\n- Side length exactly 20.0 mm.\n- Faces aligned to global X/Y/Z axes.\n- Top face lies on z=0.\n- Entire cube is in z<=0.\n- Center on X/Y is at (0, 0).\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create one solid cube.\n\nRequirements:\n- Side length exactly 20.0 mm.\n- Faces aligned to global X/Y/Z axes.\n- Top face lies on z=0.\n- Entire cube is in z<=0.\n- Center on X/Y is at (0, 0).\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "easy",
+    "document": {
+      "name": "cube 20mm z minus",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "side_mm": 20.0,
+      "top_z_mm": 0.0,
+      "min_z_mm": -20.0,
+      "center_x_mm": 0.0,
+      "center_y_mm": 0.0,
+      "volume_mm3": 8000.0
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "flange_40_24_h20_bolt4",
+    "prompt": "Create a two-step flange spacer.\n\nRequirements:\n- Axis is global Z.\n- Part sits in z>=0 with base on z=0.\n- Base disk: diameter 40.0 mm, thickness 8.0 mm.\n- Top boss: diameter 24.0 mm, height 12.0 mm (on top of base).\n- Total height: 20.0 mm.\n- One center through-bore: diameter 12.0 mm through full height.\n- Four through bolt holes: diameter 5.0 mm on 30.0 mm bolt circle\n  at angles 0, 90, 180, 270 degrees.\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create a two-step flange spacer.\n\nRequirements:\n- Axis is global Z.\n- Part sits in z>=0 with base on z=0.\n- Base disk: diameter 40.0 mm, thickness 8.0 mm.\n- Top boss: diameter 24.0 mm, height 12.0 mm (on top of base).\n- Total height: 20.0 mm.\n- One center through-bore: diameter 12.0 mm through full height.\n- Four through bolt holes: diameter 5.0 mm on 30.0 mm bolt circle\n  at angles 0, 90, 180, 270 degrees.\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "hard",
+    "document": {
+      "name": "flange 40 24 h20 bolt4",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "base_d_mm": 40.0,
+      "boss_d_mm": 24.0,
+      "height_mm": 20.0,
+      "base_h_mm": 8.0,
+      "center_bore_d_mm": 12.0,
+      "bolt_circle_d_mm": 30.0,
+      "bolt_hole_d_mm": 5.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 20.0
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "hex_nut_af17_h8_bore10",
+    "prompt": "Create a hex nut blank.\n\nRequirements:\n- Outer profile is a regular hexagon prism.\n- Across-flats size is 17.0 mm.\n- Thickness is 8.0 mm along +Z.\n- One centered through-bore diameter 10.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Axis of bore is global Z.\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create a hex nut blank.\n\nRequirements:\n- Outer profile is a regular hexagon prism.\n- Across-flats size is 17.0 mm.\n- Thickness is 8.0 mm along +Z.\n- One centered through-bore diameter 10.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Axis of bore is global Z.\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "medium",
+    "document": {
+      "name": "hex nut af17 h8 bore10",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "af_mm": 17.0,
+      "thickness_mm": 8.0,
+      "bore_d_mm": 10.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 8.0,
+      "volume_mm3": 1373.93
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "l_bracket_40x40x6_2_hole",
+    "prompt": "Create an L-bracket plate.\n\nRequirements:\n- Plate thickness: 6.0 mm along +Z.\n- Bottom face lies on z=0; entire part in z>=0.\n- XY footprint is the union of:\n  - rectangle [0,40]x[0,20]\n  - rectangle [0,20]x[0,40]\n- Through-holes (diameter 6.0 mm) along +Z at centers:\n  - (10, 10)\n  - (30, 10)\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create an L-bracket plate.\n\nRequirements:\n- Plate thickness: 6.0 mm along +Z.\n- Bottom face lies on z=0; entire part in z>=0.\n- XY footprint is the union of:\n  - rectangle [0,40]x[0,20]\n  - rectangle [0,20]x[0,40]\n- Through-holes (diameter 6.0 mm) along +Z at centers:\n  - (10, 10)\n  - (30, 10)\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "medium",
+    "document": {
+      "name": "l bracket 40x40x6 2 hole",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "bbox_x_mm": 40.0,
+      "bbox_y_mm": 40.0,
+      "thickness_mm": 6.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 6.0,
+      "hole_d_mm": 6.0,
+      "volume_mm3": 6860.7
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "plate_100x60x12_slot_8_hole",
+    "prompt": "Create a heavily-featured mounting plate.\n\nRequirements:\n- Plate size: 100.0 mm (X) x 60.0 mm (Y) x 12.0 mm (Z).\n- Centered at (0, 0) in XY.\n- Bottom face on z=0 and entire part in z>=0.\n- One centered through-slot: 50.0 mm long (X direction), 12.0 mm wide (Y), through all thickness.\n- Eight through-holes (diameter 6.0 mm) at:\n  - (±40, ±20) and (±20, ±20).\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create a heavily-featured mounting plate.\n\nRequirements:\n- Plate size: 100.0 mm (X) x 60.0 mm (Y) x 12.0 mm (Z).\n- Centered at (0, 0) in XY.\n- Bottom face on z=0 and entire part in z>=0.\n- One centered through-slot: 50.0 mm long (X direction), 12.0 mm wide (Y), through all thickness.\n- Eight through-holes (diameter 6.0 mm) at:\n  - (±40, ±20) and (±20, ±20).\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "hard",
+    "document": {
+      "name": "plate 100x60x12 slot 8 hole",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "size_x_mm": 100.0,
+      "size_y_mm": 60.0,
+      "size_z_mm": 12.0,
+      "slot_len_mm": 50.0,
+      "slot_w_mm": 12.0,
+      "hole_d_mm": 6.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 12.0,
+      "volume_mm3": 62085.66
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "plate_80x40x8_slot_4_hole",
+    "prompt": "Create a slotted mounting plate.\n\nRequirements:\n- Plate size: 80.0 mm (X) x 40.0 mm (Y) x 8.0 mm (Z).\n- Bottom face on z=0 and entire part in z>=0.\n- Centered at (0, 0) in XY.\n- One centered through slot: 40.0 mm long (X direction), 10.0 mm wide (Y), through all thickness.\n- Four through-holes (diameter 6.0 mm) at XY:\n  - (+30, +15), (+30, -15), (-30, +15), (-30, -15).\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create a slotted mounting plate.\n\nRequirements:\n- Plate size: 80.0 mm (X) x 40.0 mm (Y) x 8.0 mm (Z).\n- Bottom face on z=0 and entire part in z>=0.\n- Centered at (0, 0) in XY.\n- One centered through slot: 40.0 mm long (X direction), 10.0 mm wide (Y), through all thickness.\n- Four through-holes (diameter 6.0 mm) at XY:\n  - (+30, +15), (+30, -15), (-30, +15), (-30, -15).\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "medium",
+    "document": {
+      "name": "plate 80x40x8 slot 4 hole",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "size_x_mm": 80.0,
+      "size_y_mm": 40.0,
+      "size_z_mm": 8.0,
+      "slot_len_mm": 40.0,
+      "slot_w_mm": 10.0,
+      "hole_d_mm": 6.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 8.0,
+      "volume_mm3": 21495.22
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "ring_30_20_h10_z_plus",
+    "prompt": "Create an annular ring spacer.\n\nRequirements:\n- Axis is global Z.\n- Outer diameter: 30.0 mm.\n- Inner diameter (through-bore): 20.0 mm.\n- Height: 10.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Centered at (0, 0) in XY.\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create an annular ring spacer.\n\nRequirements:\n- Axis is global Z.\n- Outer diameter: 30.0 mm.\n- Inner diameter (through-bore): 20.0 mm.\n- Height: 10.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Centered at (0, 0) in XY.\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "easy",
+    "document": {
+      "name": "ring 30 20 h10 z plus",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "outer_d_mm": 30.0,
+      "inner_d_mm": 20.0,
+      "height_mm": 10.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 10.0,
+      "center_x_mm": 0.0,
+      "center_y_mm": 0.0,
+      "volume_mm3": 3926.99
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "ring_50_30_h12_6_bolt4_pcd40",
+    "prompt": "Create a bolted ring.\n\nRequirements:\n- Axis is global Z.\n- Outer diameter: 50.0 mm.\n- Inner through-bore diameter: 30.0 mm.\n- Height: 12.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Add six through bolt holes: diameter 4.0 mm on a 40.0 mm bolt circle\n  at angles 0, 60, 120, 180, 240, 300 degrees.\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create a bolted ring.\n\nRequirements:\n- Axis is global Z.\n- Outer diameter: 50.0 mm.\n- Inner through-bore diameter: 30.0 mm.\n- Height: 12.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Add six through bolt holes: diameter 4.0 mm on a 40.0 mm bolt circle\n  at angles 0, 60, 120, 180, 240, 300 degrees.\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "hard",
+    "document": {
+      "name": "ring 50 30 h12 6 bolt4 pcd40",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "outer_d_mm": 50.0,
+      "inner_d_mm": 30.0,
+      "height_mm": 12.0,
+      "bolt_circle_d_mm": 40.0,
+      "bolt_hole_d_mm": 4.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 12.0,
+      "volume_mm3": 14168.99
+    },
+    "reference_geometry_gate": true
+  },
+  {
+    "id": "step_block_60_40_30_4_hole",
+    "prompt": "Create a three-level stepped block.\n\nRequirements:\n- Centered at (0, 0) in XY with bottom on z=0 and all geometry in z>=0.\n- Base level: 60.0 x 40.0 x 10.0 mm (X,Y,Z).\n- Middle level on top of base: 40.0 x 30.0 x 10.0 mm.\n- Top level on top of middle: 20.0 x 20.0 x 10.0 mm.\n- Total height: 30.0 mm.\n- Four through-holes (diameter 6.0 mm) along +Z at:\n  - (+15, +10), (+15, -10), (-15, +10), (-15, -10).\n\nConstruct this geometry using Forma's declarative feature editor. Preserve all specified dimensions and placement. Return the editor's JSON proposal; do not write Python code.",
+    "original_instruction": "Create a three-level stepped block.\n\nRequirements:\n- Centered at (0, 0) in XY with bottom on z=0 and all geometry in z>=0.\n- Base level: 60.0 x 40.0 x 10.0 mm (X,Y,Z).\n- Middle level on top of base: 40.0 x 30.0 x 10.0 mm.\n- Top level on top of middle: 20.0 x 20.0 x 10.0 mm.\n- Total height: 30.0 mm.\n- Four through-holes (diameter 6.0 mm) along +Z at:\n  - (+15, +10), (+15, -10), (-15, +10), (-15, -10).\n\nSubmission contract\n\nCreate `/workspace/final.py`. The file must run with Python 3.11 and Build123D 0.10.0, and it must leave the completed model in a top-level variable named `part`. The verifier evaluates that object directly.\n",
+    "difficulty": "hard",
+    "document": {
+      "name": "step block 60 40 30 4 hole",
+      "features": [],
+      "metadata": {}
+    },
+    "expected": {
+      "size_x_mm": 60.0,
+      "size_y_mm": 40.0,
+      "size_z_mm": 30.0,
+      "min_z_mm": 0.0,
+      "max_z_mm": 30.0,
+      "hole_d_mm": 6.0,
+      "volume_mm3": 37738.99
+    },
+    "reference_geometry_gate": true
+  }
+]
