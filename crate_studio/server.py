@@ -506,6 +506,22 @@ def evaluation_evidence():
     return FileResponse(path, filename="forma-evaluation-evidence.zip")
 
 
+@app.get("/performance")
+def performance_home():
+    path = DATA / "evaluation" / "performance" / "review.html"
+    if not path.is_file():
+        raise HTTPException(404, "Performance review has not been generated")
+    return FileResponse(path)
+
+
+@app.get("/performance-evidence")
+def performance_evidence():
+    path = DATA / "evaluation" / "performance" / "evidence.zip"
+    if not path.is_file():
+        raise HTTPException(404, "Performance evidence has not been generated")
+    return FileResponse(path, filename="forma-performance-evidence.zip")
+
+
 @app.get("/demo-package")
 def demo_package():
     path = DATA / "demo-v1" / "instrument-case-package.zip"

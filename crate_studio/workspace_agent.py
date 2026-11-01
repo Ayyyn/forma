@@ -14,6 +14,7 @@ import uuid
 from scripts.api_preflight import load_env, request
 from . import agent
 from .workspace_geometry import build_document
+from .workspace_cache import cached_build
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "output" / "forma" / "studio" / "agent"
@@ -57,6 +58,7 @@ PARAMS = {
     "import_step": {"asset_id"},
 }
 SYSTEM = """You are Forma Studio's bounded CAD feature-history planner. Return only JSON, never executable code.
+Stock thickness catalogues are material-specific. For a material change, use the proposed material's catalogue in engineering_context.material_profiles; retained checks describing the old material are not constraints on the new material's stock catalogue. Geometry and all user requirements still need to pass after the change.
 Schema exactly: {"summary":string,"status":"ready"|"clarify","operations":array,"questions":array of strings,"evidence":array of {"quote":string}}.
 Operations: {"action":"add","feature":{"id":unique string,"type":supported type,"name":string,"params":object,"suppressed":false}}; {"action":"update","id":existing id,"params":changed parameters only,"name":optional string}; {"action":"suppress","id":existing id,"value":boolean}; {"action":"delete","id":existing id}.
 For a supported enclosure with metadata.source_spec and metadata.source_requirements, a global panel thickness, material or clear-dimension revision MUST use a single operation {"action":"enclosure","spec":{changed fields only}}. This deterministically regenerates all panels and retains the requirements, brief and motion settings. Allowed spec fields: name,inner_width_mm,inner_depth_mm,inner_height_mm,thickness_mm,material,lid. Preserve unmentioned fields. Do not use individual box edits for global enclosure changes. This action requires the original supported panel definition and cannot discard custom edits. No requirement relaxation or optimizer action is available here; use Project for those. If retained constraints fail, clarify the conflict rather than changing the requirements.
@@ -277,7 +279,7 @@ def apply_plan(base_doc, plan, prompt, asset_loader=None, geometry_lock=None):
             }
         )
     with geometry_lock if geometry_lock is not None else nullcontext():
-        result = build_document(doc, asset_loader)
+        result = cached_build(doc, asset_loader)
     status = (
         "clarify"
         if plan["status"] == "clarify"
@@ -327,7 +329,7 @@ def _model_document(value):
     return value
 
 
-def propose_document(
+def _propose_document(
     base_doc,
     prompt,
     asset_loader=None,
@@ -335,6 +337,8 @@ def propose_document(
     run_id=None,
     geometry_lock=None,
     selection_context=None,
+    context_mode="full",
+    reasoning_effort="medium",
 ):
     if not isinstance(prompt, str) or not 0 < len(prompt.strip()) <= 6000:
         raise ValueError("Instruction must contain 1Ã¢â‚¬â€œ6000 characters")
@@ -344,7 +348,7 @@ def propose_document(
     load_env()
     key = os.environ.get("MODEL_API_KEY") or os.environ.get("META_API_KEY")
     with geometry_lock if geometry_lock is not None else nullcontext():
-        base_result = build_document(base_doc, asset_loader)
+        base_result = cached_build(base_doc, asset_loader)
     proposal = {
         "status": "invalid",
         "summary": "",
@@ -405,6 +409,27 @@ def propose_document(
             "selected_topology_context": selected_geometry,
             "instruction": prompt,
         }
+        if context_mode in ("compact", "focused"):
+            if context_mode == "focused":
+                faces = [f for f in faces if f["id"] in selected_ids]
+            columns = [
+                "id",
+                "part_id",
+                "face_index",
+                "geom_type",
+                "center",
+                "normal",
+                "area_mm2",
+            ]
+            context["planar_face_context"] = {
+                "columns": columns,
+                "rows": [[f[k] for k in columns] for f in faces],
+            }
+            context["topology_scope"] = (
+                "Selected topology only; full feature definitions and exact bounds retained."
+                if context_mode == "focused"
+                else "Exact face table: each row maps to columns, with all original numeric values retained."
+            )
         if base_doc.get("metadata", {}).get("source_spec"):
             from .workspace_requirements import requirement_state
             from .engine import MATERIALS
@@ -413,12 +438,16 @@ def propose_document(
             context["engineering_context"] = {
                 "requirement_binding": requirement_state(base_doc),
                 "material_profile": MATERIALS.get(material),
+                "material_profiles": MATERIALS,
+                "stock_check_scope": "Recompute stock membership for the proposed material; preserve all user requirements.",
             }
         messages = [
             {"role": "system", "content": SYSTEM},
             {
                 "role": "user",
-                "content": json.dumps(context, ensure_ascii=False, allow_nan=False),
+                "content": json.dumps(
+                    context, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+                ),
             },
         ]
         for attempt in range(2):
@@ -436,7 +465,9 @@ def propose_document(
                 "messages": messages,
                 "max_tokens": 4096,
                 "temperature": 0.15,
-                "reasoning_effort": "medium",
+                "reasoning_effort": reasoning_effort,
+                "prompt_cache_key": "forma-studio-"
+                + hashlib.sha256(SYSTEM.encode()).hexdigest()[:16],
             }
             encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
             if len(encoded) > 180000:
@@ -487,8 +518,21 @@ def propose_document(
                     type(usage.get(k)) is int and usage[k] >= 0
                     for k in ("prompt_tokens", "completion_tokens")
                 )
+                cached_tokens = (usage.get("prompt_tokens_details") or {}).get(
+                    "cached_tokens", 0
+                )
+                if (
+                    type(cached_tokens) is not int
+                    or not valid_usage
+                    or not 0 <= cached_tokens <= usage["prompt_tokens"]
+                ):
+                    cached_tokens = 0
                 cost = (
-                    (usage["prompt_tokens"] * 4e-6 + usage["completion_tokens"] * 20e-6)
+                    (
+                        (usage["prompt_tokens"] - cached_tokens) * 4e-6
+                        + cached_tokens * 0.2e-6
+                        + usage["completion_tokens"] * 20e-6
+                    )
                     if valid_usage
                     else reservation
                 )
@@ -503,6 +547,7 @@ def propose_document(
                     "elapsed_s": time.monotonic() - started,
                     "estimated_cost_usd": cost,
                     "usage_complete": valid_usage,
+                    "cached_input_tokens": cached_tokens,
                     "budget_charge_usd": max(0, cost - reservation),
                     "billing_verified": False,
                 }
@@ -580,3 +625,133 @@ def propose_document(
         encoding="utf-8",
     )
     return proposal
+
+
+# Policies remain explicit during evaluation. Only promote a candidate after the
+# frozen suite and selection/dependency checks show no observed regression.
+DEFAULT_CONTEXT_MODE = "full"
+DEFAULT_REASONING_EFFORT = "medium"
+
+
+def propose_document(
+    base_doc,
+    prompt,
+    asset_loader=None,
+    on_event=None,
+    run_id=None,
+    geometry_lock=None,
+    selection_context=None,
+    *,
+    context_mode=None,
+    reasoning_effort=None,
+    use_cache=True,
+):
+    from . import proposal_cache
+
+    mode = context_mode or DEFAULT_CONTEXT_MODE
+    effort = reasoning_effort or DEFAULT_REASONING_EFFORT
+    if mode not in ("full", "compact", "focused") or effort not in (
+        "minimal",
+        "low",
+        "medium",
+        "high",
+    ):
+        raise ValueError("Unsupported planner policy")
+    if not isinstance(prompt, str) or not 0 < len(prompt.strip()) <= 6000:
+        raise ValueError("Instruction must contain 1–6000 characters")
+    run_id = run_id or "studio-meta-" + uuid.uuid4().hex[:12]
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", run_id):
+        raise ValueError("Invalid run ID")
+    folder = RUNS / run_id
+    if folder.exists():
+        raise FileExistsError(
+            "Run ID already exists; inspect its receipt before retrying"
+        )
+    settings = {
+        "model": MODEL,
+        "system": SYSTEM,
+        "context_mode": mode,
+        "reasoning_effort": effort,
+        "max_tokens": 4096,
+    }
+    key = proposal_cache.identity(
+        base_doc, prompt, selection_context, settings, asset_loader
+    )
+    with proposal_cache.single_flight(key):
+        prior = proposal_cache.read(RUNS, key) if use_cache else None
+        if prior:
+            try:
+                proposal = apply_plan(
+                    base_doc, prior["plan"], prompt, asset_loader, geometry_lock
+                )
+            except (ValueError, TypeError, KeyError):
+                proposal = {"status": "invalid"}
+            if proposal["status"] == "ready":
+                folder.mkdir(parents=True, exist_ok=False)
+                cache = {
+                    "hit": True,
+                    "key": key,
+                    "source_run_id": prior["run_id"],
+                    "source_response_ids": prior["response_ids"],
+                    "revalidated": True,
+                }
+                proposal.update(
+                    model=MODEL,
+                    run_id=run_id,
+                    response_ids=[],
+                    calls=0,
+                    estimated_cost_usd=0,
+                    billing_verified=False,
+                    cache=cache,
+                )
+                (folder / "events.jsonl").write_text(
+                    json.dumps(
+                        {"kind": "cache_hit", "budget_charge_usd": 0, "cache": cache}
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (folder / "proposal.json").write_text(
+                    json.dumps(_redact(proposal), ensure_ascii=False, allow_nan=False),
+                    encoding="utf-8",
+                )
+                if on_event:
+                    on_event("verify", "Reused exact proposal; CAD revalidated")
+                return proposal
+        proposal = _propose_document(
+            base_doc,
+            prompt,
+            asset_loader,
+            on_event,
+            run_id,
+            geometry_lock,
+            selection_context,
+            mode,
+            effort,
+        )
+        proposal["cache"] = {"hit": False, "key": key, "bypassed": not use_cache}
+        if use_cache and proposal["status"] == "ready":
+            events = [
+                json.loads(line)
+                for line in (folder / "events.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            answer = next(e for e in reversed(events) if e.get("kind") == "response")
+            try:
+                proposal_cache.write(
+                    RUNS,
+                    key,
+                    {
+                        "plan": parse_plan(answer["public_response"]),
+                        "run_id": run_id,
+                        "response_ids": proposal["response_ids"],
+                    },
+                )
+            except OSError:
+                proposal["cache"]["storage_error"] = True
+        (folder / "proposal.json").write_text(
+            json.dumps(_redact(proposal), ensure_ascii=False, allow_nan=False),
+            encoding="utf-8",
+        )
+        return proposal

@@ -7,6 +7,7 @@ import json
 import math
 from pathlib import Path
 import statistics
+import shutil
 import subprocess
 import sys
 import time
@@ -204,7 +205,7 @@ def summarize(folder):
     return result
 
 
-def run(folder, group, limit, live, ids=None):
+def run(folder, group, limit, live, ids=None, context_mode=None, reasoning_effort=None):
     protocol = verify_freeze()
     folder.mkdir(parents=True, exist_ok=True)
     source_hashes = {p.name: digest(p) for p in (ROOT / "crate_studio").glob("*.py")}
@@ -214,6 +215,14 @@ def run(folder, group, limit, live, ids=None):
         raise ValueError(
             "Application source changed: retain this run and use a new run name"
         )
+    if (folder / "run-manifest.json").exists():
+        manifest = load(folder / "run-manifest.json")
+        if manifest.get("context_mode") != (
+            context_mode or wa.DEFAULT_CONTEXT_MODE
+        ) or manifest.get("reasoning_effort") != (
+            reasoning_effort or wa.DEFAULT_REASONING_EFFORT
+        ):
+            raise ValueError("Planner policy changed; use a new run name")
     if not (folder / "run-manifest.json").exists():
         dump(
             folder / "run-manifest.json",
@@ -223,6 +232,9 @@ def run(folder, group, limit, live, ids=None):
                 "runner_sha256": digest(Path(__file__)),
                 "start_conservative_spend_usd": wa.estimated_spend(),
                 "maximum_calls_per_task": 2,
+                "context_mode": context_mode or wa.DEFAULT_CONTEXT_MODE,
+                "reasoning_effort": reasoning_effort or wa.DEFAULT_REASONING_EFFORT,
+                "exact_proposal_cache_bypassed": True,
                 "requested_task_ids": ids,
                 "task_payload": "Only frozen synthetic revision documents and public CAD task geometry instructions; no user project data.",
             },
@@ -270,6 +282,9 @@ def run(folder, group, limit, live, ids=None):
                 task["prompt"],
                 run_id=runid,
                 selection_context=task.get("selection", {}),
+                context_mode=context_mode,
+                reasoning_effort=reasoning_effort,
+                use_cache=False,
             )
             elapsed = time.monotonic() - start
             dump(dest / "timing.json", {"elapsed_s": elapsed})
@@ -293,7 +308,17 @@ def run(folder, group, limit, live, ids=None):
         dump(dest / "first-pass-proposal.json", first)
         scorer = revision_score if name == "revision" else public_score
         first_score = scorer(task, first, dest / "first-pass")
-        verified = scorer(task, proposal, dest / "verified")
+        reused_score = all(
+            first.get(k) == proposal.get(k) for k in ("status", "document", "questions")
+        )
+        if reused_score:
+            verified = deepcopy(first_score)
+            if (dest / "first-pass").exists():
+                shutil.copytree(
+                    dest / "first-pass", dest / "verified", dirs_exist_ok=True
+                )
+        else:
+            verified = scorer(task, proposal, dest / "verified")
         row = {
             "id": task["id"],
             "group": name,
@@ -303,6 +328,7 @@ def run(folder, group, limit, live, ids=None):
             "elapsed_s": elapsed,
             "first_pass": first_score,
             "verified": verified,
+            "identical_first_final_scoring_reused": reused_score,
         }
         dump(dest / "result.json", row)
         count += 1
@@ -335,8 +361,18 @@ def main():
     parser.add_argument("--limit", type=int)
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--ids", nargs="+")
+    parser.add_argument("--context-mode", choices=("full", "compact", "focused"))
+    parser.add_argument("--reasoning-effort", choices=("low", "medium"))
     args = parser.parse_args()
-    run(args.output, args.group, args.limit, args.live, args.ids)
+    run(
+        args.output,
+        args.group,
+        args.limit,
+        args.live,
+        args.ids,
+        args.context_mode,
+        args.reasoning_effort,
+    )
 
 
 if __name__ == "__main__":

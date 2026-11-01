@@ -1,5 +1,6 @@
 """Curated source handoff. No credentials, runtimes or unrelated experiments."""
 
+import argparse
 import hashlib
 import json
 import os
@@ -11,7 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "output/forma"
 
 
-def main():
+def main(name="forma-source.zip"):
+    if Path(name).name != name or not name.endswith(".zip"):
+        raise ValueError("Source package name must be a ZIP filename")
     files = [
         p
         for p in (ROOT / "crate_studio").rglob("*")
@@ -33,6 +36,20 @@ def main():
         for name in protocol["upstream_file_hashes"]
     ]
     files += [ROOT / "research/vendor/cad-bench/LICENSE"]
+    files += list((ROOT / "examples").glob("forma-batman-*.json"))
+    files += [
+        ROOT / name
+        for name in [
+            "docs/FORMA_PERFORMANCE.md",
+            "docs/FORMA_BATMAN_DEMO.md",
+            "research/forma_performance.py",
+            "research/forma_performance_report.py",
+            "research/verify_forma_cache_http.py",
+            "research/verify_forma_cache_replay.py",
+            "research/build_batman_demo.py",
+            "research/verify_batman_attachment.py",
+        ]
+    ]
     files += [
         ROOT / p
         for p in [
@@ -90,7 +107,7 @@ def main():
         if any(secret in data for secret in secrets):
             raise ValueError("Credential value detected; source package not created")
         hashes[p.relative_to(ROOT).as_posix()] = hashlib.sha256(data).hexdigest()
-    destination = OUT / "forma-source.zip"
+    destination = OUT / name
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as z:
         for p in sorted(files):
             z.write(p, p.relative_to(ROOT).as_posix())
@@ -112,11 +129,16 @@ def main():
         "path": str(destination),
         "published": False,
     }
-    (OUT / "source-package.json").write_text(
-        json.dumps(receipt, indent=2), encoding="utf-8"
+    receipt_path = OUT / (
+        "source-package.json"
+        if name == "forma-source.zip"
+        else destination.stem + "-receipt.json"
     )
+    receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
     print(json.dumps(receipt, indent=2))
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--name", default="forma-source.zip")
+    main(parser.parse_args().name)

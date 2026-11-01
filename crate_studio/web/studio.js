@@ -1748,7 +1748,7 @@ $("#check-interference").addEventListener("click", async () => {
     button.disabled = false;
   }
 });
-async function sendAgent() {
+async function sendAgent(regenerate = false) {
   const prompt = $("#agent-prompt").value.trim();
   if (!prompt || state.agentBusy || state.busy) return;
   if (state.pending || state.inspectorDirty || state.agentPreview) {
@@ -1778,6 +1778,7 @@ async function sendAgent() {
           .map((x) => x.id)
           .slice(-2),
         selected_feature_id: state.feature || null,
+        regenerate: regenerate === true,
       },
       30000,
     );
@@ -1911,7 +1912,7 @@ function renderAgent(job) {
   const b = state.agentBase.metrics || {},
     a = p.snapshot?.metrics || {};
   $("#agent-result").innerHTML =
-    `<strong>${esc(p.summary || "Design proposal")}</strong>${p.status === "ready" ? `<div class="agent-comparison"><span>Volume</span><span>${fmt(b.volume_mm3)} → ${fmt(a.volume_mm3)} mm³</span><span>Solids</span><span>${b.solid_count || 0} → ${a.solid_count || 0}</span></div>` : ""}${p.questions?.length ? `<ul>${p.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : ""}${p.changes?.length ? `<details><summary>${p.changes.length} change${p.changes.length === 1 ? "" : "s"}</summary><ul>${p.changes.map((c) => `<li>${esc(describeChange(c))}</li>`).join("")}</ul></details>` : ""}${p.snapshot?.checks ? `<details><summary>Geometry verification</summary>${p.snapshot.checks.map((c) => `<p>${c.status === "pass" ? "✓" : c.status === "fail" ? "×" : "i"} ${esc(c.label)}${c.detail ? " — " + esc(c.detail) : ""}</p>`).join("")}</details>` : ""}<div class="agent-actions">${p.status === "ready" ? '<button id="agent-preview">Preview design</button><button id="agent-apply" class="primary">Apply revision</button>' : ""}<button id="agent-dismiss">Dismiss</button><small>${esc(p.model || state.model?.name || "Meta")}${p.estimated_cost_usd != null ? " · ~$" + Number(p.estimated_cost_usd).toFixed(4) + " estimated" : ""}</small></div>`;
+    `<strong>${esc(p.summary || "Design proposal")}</strong>${p.status === "ready" ? `<div class="agent-comparison"><span>Volume</span><span>${fmt(b.volume_mm3)} → ${fmt(a.volume_mm3)} mm³</span><span>Solids</span><span>${b.solid_count || 0} → ${a.solid_count || 0}</span></div>` : ""}${p.questions?.length ? `<ul>${p.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : ""}${p.changes?.length ? `<details><summary>${p.changes.length} change${p.changes.length === 1 ? "" : "s"}</summary><ul>${p.changes.map((c) => `<li>${esc(describeChange(c))}</li>`).join("")}</ul></details>` : ""}${p.snapshot?.checks ? `<details><summary>Geometry verification</summary>${p.snapshot.checks.map((c) => `<p>${c.status === "pass" ? "✓" : c.status === "fail" ? "×" : "i"} ${esc(c.label)}${c.detail ? " — " + esc(c.detail) : ""}</p>`).join("")}</details>` : ""}<div class="agent-actions">${p.status === "ready" ? '<button id="agent-preview">Preview design</button><button id="agent-apply" class="primary">Apply revision</button>' : ""}<button id="agent-regenerate" title="Request a fresh model response">New proposal</button><button id="agent-dismiss">Dismiss</button><small>${p.cache?.hit ? "Reused verified proposal · " : ""}${esc(p.model || state.model?.name || "Meta")}${p.estimated_cost_usd != null ? " · ~$" + Number(p.estimated_cost_usd).toFixed(4) + " estimated" : ""}</small></div>`;
   $("#agent-provenance").textContent =
     `${p.model || "Meta"} · ${p.status === "ready" ? "Awaiting review" : "No changes applied"}`;
   $("#agent-preview")?.addEventListener("click", () => {
@@ -1930,6 +1931,11 @@ function renderAgent(job) {
     setTab("model");
   });
   $("#agent-apply")?.addEventListener("click", applyAgent);
+  $("#agent-regenerate").addEventListener("click", () => {
+    if (state.agentPreview) { useSnapshot(state.agentBase); state.agentPreview = false; }
+    if (!agentStillCurrent()) { toast("The workspace changed. Request a proposal for the active version.", true); return; }
+    sendAgent(true);
+  });
   $("#agent-dismiss").addEventListener("click", () => {
     if (state.agentPreview) useSnapshot(state.agentBase);
     $("#agent-result").classList.add("hidden");

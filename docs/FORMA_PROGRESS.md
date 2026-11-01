@@ -58,3 +58,18 @@ Across initial and targeted runs: 33 actual responses and estimated $0.915048 mo
 The curated demo has four immutable stages: original brief/3 mm panels, real retained Meta 4 mm revision, human height/brief edit, then motion and fabrication export. A portable example is tracked. Studio now supports revision/view permalinks and project-scoped history, with all older designs still accessible. Browser QA caught and fixed history clipping. See [FORMA_DEMO_SCRIPT.md](FORMA_DEMO_SCRIPT.md).
 
 Current checks: 81 offline unit tests (42 Studio, 35 enclosure, 4 evaluation controls) and 14 release HTTP/data checks for reports, evidence hashes, demo lineage, motion and component downloads. Physical measurements remain pending.
+
+## Exact reuse and planner performance — November 2
+
+Shared CAD caching, exact verified-proposal reuse, duplicate-job coalescing and
+explicit fresh proposals are implemented. A live synthetic request took 3.164 s
+cold and 0.0949 s on an identical second revision, with zero additional model
+calls and identical revalidated CAD. All 31 retained plans replayed identically
+with/without caching. Current offline count: 88 passing checks.
+
+Focused context/low reasoning was evaluated fresh on all 31 frozen tasks: 19/20
+revisions and 11/11 public geometry cases, plus 6/6 constructed selection cases.
+It was not promoted after a material-stock regression. Medium reasoning also
+failed with that incomplete context; adding proposed-material stock catalogues
+restored the unchanged steel task in a targeted full/medium rerun. No new full
+post-fix suite claim is made. See [FORMA_PERFORMANCE.md](FORMA_PERFORMANCE.md).

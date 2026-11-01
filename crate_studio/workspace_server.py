@@ -34,6 +34,7 @@ from .workspace_geometry import (
     _bounds as exact_bounds_mm,
 )
 from .workspace_drawing import drawing_svg, export_drawings, validate_annotations
+from .workspace_cache import cached_build, cache_clear, cache_info
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "output/forma/studio"
@@ -199,9 +200,12 @@ def drawing_key(doc):
     )
 
 
-@lru_cache(maxsize=20)
 def built(encoded):
-    return build_document(json.loads(encoded), asset_path)
+    return cached_build(json.loads(encoded), asset_path)
+
+
+built.cache_clear = cache_clear
+built.cache_info = cache_info
 
 
 @lru_cache(maxsize=20)
@@ -463,6 +467,7 @@ class PromptBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=6000)
     selection: list[str] = Field(default_factory=list, max_length=2)
     selected_feature_id: str | None = None
+    regenerate: bool = False
 
 
 def create_router(cad_lock, crate_reader=None):
@@ -780,7 +785,25 @@ def create_router(cad_lock, crate_reader=None):
             f["id"] for f in base["document"]["features"]
         }:
             raise ValueError("Unknown selected feature")
+        request_key = hashlib.sha256(
+            json.dumps(
+                {
+                    "document_id": body.document_id,
+                    "prompt": body.prompt,
+                    "selection": body.selection,
+                    "selected_feature_id": body.selected_feature_id,
+                },
+                sort_keys=True,
+                allow_nan=False,
+            ).encode()
+        ).hexdigest()
         with JOBS_LOCK:
+            for previous in reversed(list(JOBS.values())):
+                if previous.get("request_key") == request_key:
+                    active = previous["status"] in ("queued", "running")
+                    reusable = previous.get("proposal", {}).get("status") == "ready"
+                    if active or (not body.regenerate and reusable):
+                        return deepcopy(previous)
             if any(x["status"] in ["queued", "running"] for x in JOBS.values()):
                 raise HTTPException(409, "A Studio proposal is already running")
             id = "studio-" + uuid.uuid4().hex[:12]
@@ -790,6 +813,7 @@ def create_router(cad_lock, crate_reader=None):
                 "status": "queued",
                 "stage": "Queued",
                 "events": [],
+                "request_key": request_key,
             }
 
         def event(kind, message):
@@ -811,6 +835,7 @@ def create_router(cad_lock, crate_reader=None):
                         "feature_id": body.selected_feature_id,
                         "topology_ids": body.selection,
                     },
+                    use_cache=not body.regenerate,
                 )
                 if p["status"] == "ready":
                     p["snapshot"] = snapshot(p["document"], cad_lock)
@@ -859,6 +884,7 @@ def create_router(cad_lock, crate_reader=None):
                     "model": p["model"],
                     "run_id": p["run_id"],
                     "response_ids": p["response_ids"],
+                    "cache": p.get("cache", {}),
                 },
             )
             with JOBS_LOCK:

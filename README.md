@@ -26,6 +26,9 @@ Manual editing, deterministic optimization and exports work without credentials.
 - Finite-thickness wall folding with local playback, sampled overlap checks and envelope plots.
 - Large stage canvas with pan/zoom, minimap and model overview.
 - Separate flat panel STEP/STL components and revision-bound workflow reports in the export package.
+- Exact CAD/proposal reuse, duplicate-request coalescing, and an explicit New proposal option.
+
+Caching measurements and the rejected experimental planner policy are documented in [FORMA_PERFORMANCE.md](docs/FORMA_PERFORMANCE.md); open http://127.0.0.1:8770/performance for evidence. Full context and medium reasoning remain the defaults.
 
 [Shared workflow and physical mockup guide](docs/FORMA_WORKFLOW.md) · [Studio capabilities and limits](docs/FORMA_STUDIO.md) · [Implementation plan](docs/FORMA_BUILD_PLAN.md) · [Demo](docs/FORMA_DEMO.md)
 

@@ -2,6 +2,11 @@
 
 The feature-based CAD editor is available at `/studio`. See `docs/FORMA_STUDIO.md` for its human/AI editing, import, assembly and drawing workflows and scope.
 
+Studio reuses exact validated proposals and shares CAD builds with the AI path.
+`New proposal` requests fresh generation. Provider cached-input pricing is now
+accounted for in new receipts; prior budget reservations are preserved. See
+`docs/FORMA_PERFORMANCE.md` for measurements, quality gates and limitations.
+
 Forma turns engineering intent into a checked revision of a rectangular panel enclosure. It combines a live Meta model with a deterministic design environment, real OpenCascade solids, immutable revisions and reproducible exports.
 
 ## Start

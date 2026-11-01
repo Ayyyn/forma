@@ -210,6 +210,15 @@ class WorkspaceAgentTests(unittest.TestCase):
         self.assertNotIn(
             3.5, context["engineering_context"]["material_profile"]["stock_mm"]
         )
+        self.assertIn(
+            2, context["engineering_context"]["material_profiles"]["steel"]["stock_mm"]
+        )
+        self.assertNotIn(
+            2,
+            context["engineering_context"]["material_profiles"]["polypropylene"][
+                "stock_mm"
+            ],
+        )
         self.assertEqual(
             context["engineering_context"]["requirement_binding"]["status"], "current"
         )
