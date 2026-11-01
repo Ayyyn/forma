@@ -117,7 +117,7 @@ class WorkspaceAgentTests(unittest.TestCase):
                 "make it 40 mm tall",
             )
 
-    def call_mock(self, replies, prompt="make it 40 mm tall"):
+    def call_mock(self, replies, prompt="make it 40 mm tall", document=None):
         root = Path(__file__).resolve().parents[1] / "output"
         with tempfile.TemporaryDirectory(dir=root) as directory:
             with patch.object(wa, "RUNS", Path(directory)), patch.object(
@@ -129,7 +129,11 @@ class WorkspaceAgentTests(unittest.TestCase):
             ), patch.object(
                 wa, "request", side_effect=replies
             ) as transport:
-                result = wa.propose_document(base(), prompt, run_id="offline-test")
+                result = wa.propose_document(
+                    document if document is not None else base(),
+                    prompt,
+                    run_id="offline-test",
+                )
                 ledger = (Path(directory) / "offline-test" / "events.jsonl").read_text()
                 self.assertNotIn("offline-test-secret", ledger)
                 return result, transport.call_args_list, ledger
@@ -163,6 +167,8 @@ class WorkspaceAgentTests(unittest.TestCase):
         self.assertEqual(result["calls"], 2)
         feedback = json.loads(calls[1].args[3]["messages"][-1]["content"])
         self.assertFalse(feedback["actual_result"]["checks"]["passed"])
+        self.assertEqual(feedback["original_instruction"], "make it 40 mm tall")
+        self.assertIn("never this validation feedback", feedback["evidence_rule"])
         self.assertEqual(feedback["actual_result"]["features"][-1]["status"], "error")
 
     def test_network_failure_is_not_success_or_retried(self):
@@ -173,6 +179,42 @@ class WorkspaceAgentTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(result["response_ids"], [])
         self.assertIn("failed", result["summary"])
+
+    def test_enclosure_context_includes_retained_stock_for_clarification(self):
+        from crate_studio.workspace_workflow import revise_enclosure
+
+        doc = revise_enclosure(
+            {"features": [], "metadata": {}},
+            {
+                "inner_width_mm": 90,
+                "inner_depth_mm": 60,
+                "inner_height_mm": 45,
+                "material": "polypropylene",
+                "thickness_mm": 3,
+            },
+            {"min_capacity_l": 0.2},
+        )
+        p = {
+            "summary": "Stock conflict",
+            "status": "clarify",
+            "operations": [],
+            "questions": ["Which listed stock thickness?"],
+            "evidence": [],
+        }
+        result, calls, _ = self.call_mock(
+            [response(p)],
+            prompt="Use exactly 3.5 mm panels without changing stock requirements.",
+            document=doc,
+        )
+        context = json.loads(calls[0].args[3]["messages"][1]["content"])
+        self.assertNotIn(
+            3.5, context["engineering_context"]["material_profile"]["stock_mm"]
+        )
+        self.assertEqual(
+            context["engineering_context"]["requirement_binding"]["status"], "current"
+        )
+        self.assertEqual(result["document"], doc)
+        self.assertEqual(result["status"], "clarify")
 
 
 if __name__ == "__main__":
