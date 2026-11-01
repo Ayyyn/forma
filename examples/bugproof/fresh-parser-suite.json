@@ -1,0 +1,17 @@
+{
+  "tests": [
+    {
+      "message": {
+        "content": "<atem:function_calls><atem:invoke name=\"submit_suite\"><atem:parameter name=\"status\">suite</atem:parameter><atem:parameter name=\"evidence_quote\">a & b</atem:parameter></atem:invoke></atem:function_calls>"
+      },
+      "expected": "ValueError"
+    },
+    {
+      "message": {
+        "content": "<atem:function_calls><atem:invoke name=\"submit_suite\"><atem:parameter name=\"status\">suite</atem:parameter><atem:parameter name=\"evidence_quote\">a &amp; b</atem:parameter></atem:invoke></atem:function_calls>"
+      },
+      "expected": "returns"
+    }
+  ],
+  "public_explanation": "Regression has unescaped ampersand in atem parameter value causing ET.ParseError instead of ValueError; control escapes as &amp; and should decode successfully."
+}

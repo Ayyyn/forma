@@ -1,0 +1,3 @@
+-r requirements-workbench.txt
+# Optional independent OpenSees audit uses the isolated runtime described in
+# behavior_design/README.md; it is not required for normal app replay.

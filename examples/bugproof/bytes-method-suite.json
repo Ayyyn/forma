@@ -1,0 +1,112 @@
+{
+  "case_id": "psf__requests-2317",
+  "model_response_id": "chatcmpl-c1022e3298984eec85c95a13619a68db",
+  "proposal": {
+    "status": "suite",
+    "evidence_quote": "method = builtin_str(method)",
+    "question": "",
+    "tests": [
+      {
+        "action": "request",
+        "parameters": {
+          "method": "GET",
+          "method_bytes_hex": "474554",
+          "url": "http://example.com/",
+          "body_text": null,
+          "body_bytes_hex": null,
+          "session_headers": {},
+          "headers": {},
+          "scheme": "http",
+          "username": "user",
+          "password": "pass",
+          "realm": "test-realm",
+          "nonce": "test-nonce",
+          "qop": "auth",
+          "name": "example"
+        },
+        "assertion": {
+          "kind": "equals",
+          "field": "method",
+          "header": "",
+          "value": "GET"
+        }
+      },
+      {
+        "action": "request",
+        "parameters": {
+          "method": "GET",
+          "method_bytes_hex": "504f5354",
+          "url": "http://example.com/",
+          "body_text": null,
+          "body_bytes_hex": null,
+          "session_headers": {},
+          "headers": {},
+          "scheme": "http",
+          "username": "user",
+          "password": "pass",
+          "realm": "test-realm",
+          "nonce": "test-nonce",
+          "qop": "auth",
+          "name": "example"
+        },
+        "assertion": {
+          "kind": "equals",
+          "field": "method",
+          "header": "",
+          "value": "POST"
+        }
+      },
+      {
+        "action": "request",
+        "parameters": {
+          "method": "GET",
+          "method_bytes_hex": null,
+          "url": "http://example.com/",
+          "body_text": null,
+          "body_bytes_hex": null,
+          "session_headers": {},
+          "headers": {},
+          "scheme": "http",
+          "username": "user",
+          "password": "pass",
+          "realm": "test-realm",
+          "nonce": "test-nonce",
+          "qop": "auth",
+          "name": "example"
+        },
+        "assertion": {
+          "kind": "equals",
+          "field": "method",
+          "header": "",
+          "value": "GET"
+        }
+      },
+      {
+        "action": "request",
+        "parameters": {
+          "method": "GET",
+          "method_bytes_hex": "44454c455445",
+          "url": "http://example.com/",
+          "body_text": null,
+          "body_bytes_hex": null,
+          "session_headers": {},
+          "headers": {},
+          "scheme": "http",
+          "username": "user",
+          "password": "pass",
+          "realm": "test-realm",
+          "nonce": "test-nonce",
+          "qop": "auth",
+          "name": "example"
+        },
+        "assertion": {
+          "kind": "equals",
+          "field": "method",
+          "header": "",
+          "value": "DELETE"
+        }
+      }
+    ]
+  },
+  "scope": "Meta-authored test contracts; actual upstream historical bug, offline request preparation."
+}

@@ -1,0 +1,4 @@
+/* Keep the actual structure first on small screens; desktop keeps three panels. */
+#revision-list{max-height:320px;overflow:auto;margin-top:10px}
+#revision-details{margin-top:10px}
+@media(max-width:720px){main{display:flex;flex-direction:column}.center-panel{order:0}.left-panel{order:1;border-top:1px solid var(--line)}.right-panel{order:2}}

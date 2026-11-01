@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Forma — Design workspace</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+    <script type="importmap">
+      { "imports": { "three": "/assets/vendor/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Forma home"
+        ><span class="brand-mark">F</span> FORMA</a
+      ><span class="divider"></span>
+      <div class="project-heading">
+        <strong id="project-name">Crate assembly</strong
+        ><span id="version-label">Loading workspace…</span>
+      </div>
+      <span class="local-pill"><i></i> Local workspace</span>
+      <div class="header-actions">
+        <button
+          id="open-studio"
+          title="Open panels in the feature-based CAD editor"
+        >
+          CAD Studio
+        </button>
+        <button id="new-project">＋ New</button
+        ><button id="import-project">Import</button
+        ><button id="save-project">Save version</button>
+        <div class="menu-wrap">
+          <button id="export-menu" class="primary">
+            Export <span>↗</span>
+          </button>
+          <div id="export-options" class="dropdown hidden">
+            <p>DESIGN PACKAGE</p>
+            <button data-export="bundle">
+              Complete package <small>ZIP</small></button
+            ><button data-export="step">Solid model <small>STEP</small></button
+            ><button data-export="stl">Mesh <small>STL</small></button
+            ><button data-export="pdf">Drawing sheet <small>PDF</small></button
+            ><button data-export="dxf">Drawing <small>DXF</small></button
+            ><button data-export="svg">Drawing <small>SVG</small></button
+            ><button data-export="csv">Cut list <small>CSV</small></button
+            ><button data-export="source">
+              Parametric source <small>PY</small></button
+            ><button data-export="json">Project <small>JSON</small></button>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="workspace">
+      <aside class="left-panel">
+        <div class="panel-title">
+          DESIGN EXPLORER <span class="tiny desktop-only">01</span
+          ><button
+            class="drawer-close icon-button"
+            data-close-drawer
+            title="Close explorer"
+          >
+            ×
+          </button>
+        </div>
+        <button id="new-project-explorer" class="new-in-explorer">
+          ＋ New design
+        </button>
+        <div class="assembly-root">
+          <span>◇</span><strong>Panel crate</strong
+          ><span id="part-count" class="count">—</span>
+        </div>
+        <div id="part-tree" class="part-tree"></div>
+        <div class="tree-footer">
+          <span class="tree-dot"></span> Parametric assembly <span>mm</span>
+        </div>
+        <div class="panel-title revision-title">
+          VERSION HISTORY
+          <button
+            id="refresh-history"
+            class="icon-button"
+            title="Refresh history"
+          >
+            ↻
+          </button>
+        </div>
+        <div id="history" class="history">
+          <p class="empty-note">Saved versions appear here.</p>
+        </div>
+        <div class="left-bottom">
+          <div class="small-cube">◇</div>
+          <p>From intent to<br /><strong>verified geometry.</strong></p>
+          <span>All dimensions in millimetres</span>
+        </div>
+      </aside>
+      <section class="center-panel">
+        <div class="drawer-toolbar">
+          <button data-drawer="left" aria-expanded="false">☷ Explorer</button
+          ><span>DESIGN WORKSPACE</span
+          ><button data-drawer="right" aria-expanded="false">
+            Properties ⚙
+          </button>
+        </div>
+        <nav class="document-tabs" aria-label="Document views">
+          <button data-tab="model" class="active">◇ <span>Model</span></button
+          ><button data-tab="drawing">▧ <span>Drawing</span></button
+          ><button data-tab="cutlist">▤ <span>Cut list</span></button
+          ><button data-tab="verification">
+            ✓ <span>Verification</span><i id="check-dot"></i></button
+          ><span class="document-unit">ASSEMBLY · MM</span>
+        </nav>
+        <div class="canvas-area" id="canvas-area">
+          <div id="model-view" class="view active">
+            <div class="viewport-info">
+              <span class="eyebrow">PARAMETRIC DESIGN</span>
+              <h1 id="model-title">Panel crate</h1>
+              <p id="model-subtitle">Preparing geometry…</p>
+            </div>
+            <div
+              id="viewport"
+              tabindex="0"
+              aria-label="Interactive 3D model. Drag to orbit, right drag to pan, scroll to zoom."
+            ></div>
+            <div id="fallback" class="hidden"></div>
+            <div class="view-controls" aria-label="Camera views">
+              <button data-view="iso" class="active" title="Isometric view">
+                ISO</button
+              ><button data-view="front" title="Front view (1)">FRONT</button
+              ><button data-view="top" title="Top view (2)">TOP</button
+              ><button data-view="right" title="Right view (3)">RIGHT</button
+              ><span></span
+              ><button id="fit-view" title="Fit to view (F)">⊡</button>
+            </div>
+            <div class="model-options">
+              <label
+                ><input type="checkbox" id="show-dimensions" checked />
+                Dimensions</label
+              ><label
+                ><input type="checkbox" id="show-wireframe" /> Wireframe</label
+              ><label class="explode-control"
+                >Explode
+                <input
+                  id="explode"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value="0"
+                /><output id="explode-value">0%</output></label
+              >
+            </div>
+            <div class="viewport-bottom">
+              <span
+                ><i class="live-dot"></i
+                ><span id="geometry-status">Waiting for model</span></span
+              ><span>Drag to orbit · Right drag to pan · Scroll to zoom</span>
+            </div>
+          </div>
+          <div id="drawing-view" class="view document-view">
+            <div class="document-heading">
+              <div>
+                <span class="eyebrow">ORTHOGRAPHIC PROJECTIONS</span>
+                <h1>Geometry review drawing</h1>
+              </div>
+              <button data-export="svg">Export SVG ↗</button>
+            </div>
+            <div id="drawing-content" class="drawing-sheet"></div>
+          </div>
+          <div id="cutlist-view" class="view document-view">
+            <div class="document-heading">
+              <div>
+                <span class="eyebrow">DESIGN DATA</span>
+                <h1>Panel cut list</h1>
+              </div>
+              <button data-export="csv">Export CSV ↗</button>
+            </div>
+            <p class="section-description">
+              Dimensions and quantities derived from the current parametric
+              assembly.
+            </p>
+            <div id="cutlist-content"></div>
+          </div>
+          <div id="verification-view" class="view document-view">
+            <div class="document-heading">
+              <div>
+                <span class="eyebrow">DETERMINISTIC CHECKS</span>
+                <h1>Design verification</h1>
+              </div>
+              <span id="verification-summary" class="status-pill">Pending</span>
+            </div>
+            <p class="section-description">
+              Geometric checks are not a structural certification. Review
+              unresolved requirements before manufacture.
+            </p>
+            <div id="verification-content"></div>
+          </div>
+        </div>
+        <section class="assistant-panel">
+          <div class="assistant-heading">
+            <div>
+              <span class="spark">✳</span><strong>Design with Meta</strong
+              ><span class="assistant-caption"
+                >Describe a change. Review it before applying.</span
+              >
+            </div>
+            <span id="agent-status" class="agent-status">Ready</span>
+          </div>
+          <div
+            id="agent-result"
+            class="agent-result hidden"
+            aria-live="polite"
+          ></div>
+          <div class="composer">
+            <textarea
+              id="prompt"
+              rows="2"
+              placeholder="Switch to polypropylene at 8 mm, preserving clear internal dimensions."
+              aria-label="Design change request"
+            ></textarea
+            ><button
+              id="send-prompt"
+              class="send-button"
+              title="Send request (Ctrl+Enter)"
+            >
+              ↑
+            </button>
+          </div>
+          <div class="composer-footer">
+            <span id="model-provenance"
+              >Meta model · source-linked proposals</span
+            ><span>Ctrl + Enter to send</span>
+          </div>
+        </section>
+      </section>
+      <aside class="right-panel">
+        <div class="panel-title">
+          DESIGN PROPERTIES <span class="tiny desktop-only">↗</span
+          ><button
+            class="drawer-close icon-button"
+            data-close-drawer
+            title="Close properties"
+          >
+            ×
+          </button>
+        </div>
+        <form id="design-form">
+          <section class="inspector-section">
+            <div class="section-label">
+              ASSEMBLY <span id="selected-label">All panels</span>
+            </div>
+            <label class="field-label"
+              >Project name<input
+                id="name-input"
+                type="text"
+                value="Panel crate"
+                maxlength="100"
+            /></label>
+            <div class="section-label spacing">
+              INTERNAL CLEARANCE <span>mm</span>
+            </div>
+            <div class="dimension-input">
+              <label for="width">Width <span>X</span></label
+              ><input id="width" type="number" min="20" step="any" required />
+            </div>
+            <div class="dimension-input">
+              <label for="depth">Depth <span>Y</span></label
+              ><input id="depth" type="number" min="20" step="any" required />
+            </div>
+            <div class="dimension-input">
+              <label for="height">Height <span>Z</span></label
+              ><input id="height" type="number" min="20" step="any" required />
+            </div>
+            <div class="section-label spacing">CONSTRUCTION</div>
+            <label class="field-label"
+              >Material<select id="material"></select
+            ></label>
+            <div class="dimension-input">
+              <label for="thickness">Sheet thickness</label
+              ><input
+                id="thickness"
+                type="number"
+                min="0.5"
+                step="any"
+                required
+              />
+            </div>
+            <label class="check-label"
+              ><input id="lid" type="checkbox" /> Include top panel</label
+            ><button type="submit" id="update-design" class="full-button">
+              Preview changes <span>↗</span></button
+            ><button
+              type="button"
+              id="discard-preview"
+              class="full-button hidden"
+            >
+              Discard preview
+            </button>
+          </section>
+        </form>
+        <section class="inspector-section">
+          <div class="section-label">DESIGN OBJECTIVES</div>
+          <div id="requirements" class="requirements"></div>
+          <button id="edit-requirements" class="text-button">
+            Edit requirements ↗</button
+          ><button id="optimize-design" class="full-button">
+            Find stock design <span>↗</span>
+          </button>
+          <p id="optimizer-note" class="optimizer-note hidden"></p>
+        </section>
+        <section class="inspector-section">
+          <div class="section-label">ASSEMBLY SUMMARY</div>
+          <dl id="summary" class="summary"></dl>
+        </section>
+        <section class="inspector-section verification-teaser">
+          <div class="section-label">
+            VERIFICATION <span id="check-count">—</span>
+          </div>
+          <div id="verification-mini"></div>
+          <button class="text-button" data-tab="verification">
+            View all checks →
+          </button>
+        </section>
+        <div class="inspector-footer">
+          <span>◉</span> Changes stay local until exported
+        </div>
+      </aside>
+    </main>
+    <footer class="statusbar">
+      <span
+        ><i class="live-dot"></i>
+        <span id="status-text">Connecting to local engine…</span></span
+      ><span id="selection-status">No selection</span
+      ><span>FORMA <b>DESIGN WORKSPACE</b></span>
+    </footer>
+    <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+    <input
+      id="import-file"
+      type="file"
+      accept=".json,application/json"
+      class="hidden"
+    />
+    <div id="toast" role="status" class="toast hidden"></div>
+    <dialog id="requirements-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <h2>Design requirements</h2>
+          <button value="cancel" class="icon-button">×</button>
+        </div>
+        <p>
+          Set the limits checked on every revision. Material properties and load
+          calculations remain reference assumptions.
+        </p>
+        <div id="requirements-fields" class="requirements-fields"></div>
+        <p id="requirements-error" class="error-text"></p>
+        <div class="dialog-actions">
+          <button value="cancel">Cancel</button
+          ><button id="save-requirements" type="button" class="primary">
+            Save requirements
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>

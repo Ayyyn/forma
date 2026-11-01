@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Forma Studio — Parametric CAD</title>
+    <link rel="stylesheet" href="/assets/studio.css" />
+    <script type="importmap">
+      { "imports": { "three": "/assets/vendor/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/" class="brand"><span>F</span> FORMA <small>STUDIO</small></a
+      ><span class="separator"></span>
+      <div class="document-name">
+        <input
+          id="document-name"
+          value="Untitled design"
+          aria-label="Document name"
+        /><span id="document-state">Connecting to design engine</span>
+      </div>
+      <div class="header-actions">
+        <button id="new-document">＋ New</button
+        ><button id="import-document">Import</button
+        ><button id="save-document" class="primary">Save version</button>
+        <div class="menu-wrap">
+          <button id="export-toggle">Export ↗</button>
+          <div id="export-menu" class="export-menu hidden"></div>
+        </div>
+      </div>
+    </header>
+
+    <div class="operation-bar">
+      <div class="history-actions">
+        <button id="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button
+        ><button id="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
+          ↷
+        </button>
+      </div>
+      <span class="separator"></span>
+      <div id="operation-tools" class="operation-tools"></div>
+      <div class="operation-end">
+        <button id="measure-toggle" title="Measure between two mesh points">
+          ↔ Measure
+        </button>
+      </div>
+    </div>
+
+    <main class="studio-layout">
+      <aside class="explorer">
+        <div class="panel-heading">
+          DESIGN EXPLORER
+          <button class="drawer-close" data-close-drawer>×</button>
+        </div>
+        <button id="new-document-explorer" class="new-document-explorer">
+          ＋ New design
+        </button>
+        <div class="tree-document">
+          <span>◇</span><strong id="tree-name">Untitled design</strong
+          ><small id="feature-count">0</small>
+        </div>
+        <div id="feature-tree" class="feature-tree"></div>
+        <div class="tree-help">
+          Features rebuild in order.<br />Select a feature to edit its
+          parameters.
+        </div>
+        <div class="panel-heading history-heading">
+          SAVED VERSIONS
+          <button id="refresh-history" title="Refresh versions">↻</button>
+        </div>
+        <div id="version-history" class="version-history"></div>
+        <div class="explorer-foot">
+          <a href="/">← Crate workspace</a
+          ><span>OpenCascade geometry · millimetres</span>
+        </div>
+      </aside>
+
+      <section class="main-panel">
+        <div class="mobile-toolbar">
+          <button data-drawer="explorer">☷ Explorer</button
+          ><span>PARAMETRIC CAD</span
+          ><button data-drawer="inspector">Properties ⚙</button>
+        </div>
+        <nav class="view-tabs">
+          <button data-tab="model" class="active">◇ Model</button
+          ><button data-tab="sketch">▱ Sketch</button
+          ><button data-tab="drawing">▧ Drawing</button
+          ><span id="body-count">0 solids</span>
+        </nav>
+        <div class="stage">
+          <section id="model-tab" class="tab-panel active">
+            <div class="stage-caption">
+              <span>PARAMETRIC WORKSPACE</span>
+              <h1 id="stage-title">Untitled design</h1>
+              <p id="stage-subtitle">
+                Create a primitive or draw a sketch to begin.
+              </p>
+            </div>
+            <div
+              id="viewport"
+              tabindex="0"
+              aria-label="3D model viewport"
+            ></div>
+            <div id="webgl-fallback" class="hidden"></div>
+            <div class="view-switch">
+              <button data-view="iso" class="active">ISO</button
+              ><button data-view="front">FRONT</button
+              ><button data-view="top">TOP</button
+              ><button data-view="right">RIGHT</button
+              ><button id="fit-view" title="Fit (F)">⊡</button>
+            </div>
+            <div class="viewport-options">
+              <select id="selection-mode" aria-label="Selection mode">
+                <option value="faces">Faces</option>
+                <option value="edges">Edges</option></select
+              ><label
+                ><input id="show-grid" type="checkbox" checked /> Grid</label
+              ><label><input id="wireframe" type="checkbox" /> Wireframe</label
+              ><label
+                ><input id="show-edges" type="checkbox" checked /> Edges</label
+              >
+            </div>
+            <div id="measurement-card" class="measurement-card hidden"></div>
+            <div class="stage-hint">
+              Drag to orbit · Right-drag to pan · Scroll to zoom
+            </div>
+          </section>
+
+          <section id="sketch-tab" class="tab-panel">
+            <div class="sketch-toolbar">
+              <div class="sketch-tools">
+                <button data-sketch-tool="select" class="active" title="Select">
+                  ↖ Select</button
+                ><button data-sketch-tool="rectangle">▱ Rectangle</button
+                ><button data-sketch-tool="circle">○ Circle</button>
+              </div>
+              <label
+                ><input id="snap-enabled" type="checkbox" checked /> Snap</label
+              ><select id="snap-step" aria-label="Grid snap size">
+                <option value="1">1 mm</option>
+                <option value="5" selected>5 mm</option>
+                <option value="10">10 mm</option></select
+              ><button id="sketch-fit">Fit</button
+              ><button id="sketch-minus" title="Zoom out">−</button
+              ><button id="sketch-plus" title="Zoom in">＋</button>
+            </div>
+            <div id="sketch-surface">
+              <canvas
+                id="sketch-canvas"
+                aria-label="Click and drag to draw a sketch"
+              ></canvas>
+              <div id="annotation-layer"></div>
+              <div class="sketch-plane-label">XY PLANE <span>mm</span></div>
+              <div id="sketch-coordinate" class="sketch-coordinate">
+                X 0.0 · Y 0.0
+              </div>
+              <div class="sketch-help" id="sketch-help">
+                Choose Rectangle or Circle, then drag on the grid. Sketches are
+                editable features.
+              </div>
+            </div>
+          </section>
+
+          <section id="drawing-tab" class="tab-panel drawing-panel">
+            <div class="drawing-header">
+              <div>
+                <span>ORTHOGRAPHIC REVIEW</span>
+                <h1>Design drawing</h1>
+              </div>
+              <div class="drawing-actions">
+                <button id="add-annotation">T Add note</button
+                ><button data-export="svg">Export SVG ↗</button>
+              </div>
+            </div>
+            <div id="drawing-sheet"></div>
+            <p class="drawing-note">
+              Geometry review only. Verify dimensions, materials and fabrication
+              details before production.
+            </p>
+          </section>
+        </div>
+        <section id="feedback-panel" class="feedback-panel">
+          <div class="feedback-title">
+            <span class="feedback-dot"></span
+            ><strong id="feedback-title">Ready to create</strong
+            ><span id="feedback-summary"
+              >Every feature is evaluated by the CAD engine.</span
+            ><button id="toggle-checks" title="Show geometry checks">
+              Details⌃
+            </button>
+          </div>
+          <div id="feedback-details" class="hidden"></div>
+        </section>
+        <section class="studio-assistant">
+          <div class="assistant-heading">
+            <strong><span>✳</span> Design with Meta</strong
+            ><span id="agent-status">Ready</span>
+          </div>
+          <div id="agent-result" class="agent-result hidden"></div>
+          <div class="agent-composer">
+            <textarea
+              id="agent-prompt"
+              rows="1"
+              placeholder="Increase the base plate width to 150 mm, preserving the holes and fillets."
+              aria-label="Meta design request"
+            ></textarea
+            ><button id="agent-send" class="primary" title="Send (Ctrl+Enter)">
+              ↑
+            </button>
+          </div>
+          <div class="agent-footer">
+            <span id="agent-provenance">Meta · reviewed proposals</span
+            ><span>Ctrl + Enter</span>
+          </div>
+        </section>
+      </section>
+
+      <aside class="inspector">
+        <div class="panel-heading">
+          PROPERTIES <button class="drawer-close" data-close-drawer>×</button>
+        </div>
+        <div id="selection-inspector" class="inspector-content">
+          <div class="inspector-empty">
+            <span>◇</span>
+            <h2>Shape your next idea.</h2>
+            <p>
+              Add a primitive or sketch from the toolbar. Select a feature to
+              refine dimensions and operations.
+            </p>
+          </div>
+        </div>
+        <section class="summary-section">
+          <div class="section-title">MODEL SUMMARY</div>
+          <dl id="model-summary"></dl>
+          <button id="check-interference" class="interference-button">
+            Check body interference ↗
+          </button>
+          <div id="interference-result" class="hidden"></div>
+        </section>
+        <section class="summary-section">
+          <div class="section-title">CONFIGURATIONS</div>
+          <select id="configuration-select" aria-label="Saved configuration">
+            <option value="">Select configuration…</option>
+          </select>
+          <div class="config-actions">
+            <button id="restore-configuration">Restore</button
+            ><button id="save-configuration">Save current…</button>
+          </div>
+        </section>
+        <section class="summary-section">
+          <div class="section-title">DISPLAY</div>
+          <label class="field-label"
+            >Body color<input
+              id="body-color"
+              type="color"
+              value="#a9b9cf" /></label
+          ><button id="show-bodies-global" class="interference-button">
+            Show all bodies</button
+          ><label class="field-label"
+            >Units<select disabled>
+              <option>Millimetres (mm)</option>
+            </select></label
+          >
+        </section>
+        <div class="inspector-foot">
+          Edits are local. Save versions to retain history.
+        </div>
+      </aside>
+    </main>
+
+    <footer class="statusbar">
+      <span><i></i><span id="status-message">Starting studio…</span></span
+      ><span id="selection-message">Nothing selected</span
+      ><span>FORMA <b>STUDIO</b></span>
+    </footer>
+    <div id="drawer-backdrop" class="hidden"></div>
+    <div id="toast" class="toast hidden" role="status"></div>
+    <input
+      id="import-file"
+      type="file"
+      accept=".step,.stp,.json"
+      class="hidden"
+    />
+    <dialog id="annotation-dialog">
+      <form method="dialog">
+        <h2>Drawing annotation</h2>
+        <label class="field-label"
+          >Text<input id="annotation-text" maxlength="180" required
+        /></label>
+        <div class="dialog-actions">
+          <button id="annotation-delete" type="button" class="danger hidden">
+            Delete note</button
+          ><button value="cancel">Cancel</button
+          ><button id="annotation-save" type="button" class="primary">
+            Add annotation
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="configuration-dialog">
+      <form method="dialog">
+        <h2>Save configuration</h2>
+        <p class="parameter-note">
+          Store this feature setup for later. Restoring a configuration creates
+          a new version.
+        </p>
+        <label class="field-label"
+          >Configuration name<input
+            id="configuration-name"
+            maxlength="80"
+            required
+            placeholder="Assembly — wide variant"
+        /></label>
+        <p id="configuration-error" class="error-note hidden"></p>
+        <div class="dialog-actions">
+          <button value="cancel">Cancel</button
+          ><button id="confirm-configuration" type="button" class="primary">
+            Save configuration
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="/assets/studio.js"></script>
+  </body>
+</html>

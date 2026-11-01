@@ -1,0 +1,8 @@
+{
+  "TransformControls.js": {
+    "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/TransformControls.js",
+    "sha256": "9848ad589dfcf5f3769d0836472cb37cc46e6e0b36eb42ebcf7c898d0072e8ec",
+    "bytes": 41663,
+    "license": "MIT; see THREE-LICENSE.txt"
+  }
+}

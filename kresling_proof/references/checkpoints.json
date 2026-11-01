@@ -1,0 +1,19 @@
+{
+  "source": "Zang et al., JMPS 188 (2024) 105630, Appendix A.3 and Table 1",
+  "doi": "10.1016/j.jmps.2024.105630",
+  "frozen_before_first_model_evaluation": true,
+  "parameters": {"n": 6, "r_mm": 30.0, "h0_mm": 39.48, "theta0_deg": 30.0, "ks_N": 50.0, "kr_per_length": 0.005},
+  "crease_counts": {"n_a": 12, "n_b": 6, "n_c": 6},
+  "slices": [
+    {"fixed": "u_mm", "value": 10.0, "expected_phi_deg": 28.65, "tolerance_phi_deg": 0.1},
+    {"fixed": "phi_deg", "value": 20.0, "expected_u_mm": 6.33, "tolerance_u_mm": 0.1}
+  ],
+  "stationary": [
+    {"u_mm": 0.0, "phi_deg": 0.0, "classification": "minimum", "tolerance_u_mm": 0.00001, "tolerance_phi_deg": 0.00001},
+    {"u_mm": 12.1, "phi_deg": 33.0, "classification": "saddle", "tolerance_u_mm": 0.3, "tolerance_phi_deg": 1.0},
+    {"u_mm": 27.7, "phi_deg": 55.0, "classification": "minimum", "tolerance_u_mm": 0.3, "tolerance_phi_deg": 1.0}
+  ],
+  "second_minimum_energy": {"U_over_ks_r": 0.0041, "tolerance": 0.0002},
+  "numeric_gradient_tolerance": 1e-8,
+  "reference_precision_note": "Published rounded values; comparison tolerances are separate from numerical convergence error. No fitting or parameter calibration is permitted."
+}

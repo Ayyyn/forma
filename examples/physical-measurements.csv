@@ -1,0 +1,7 @@
+design_id,state,trial,theta_measured_deg,theta_method,x_measured_mm,y_measured_mm,z_measured_mm,measurement_uncertainty_mm,material,operator,measured_at,notes
+d1f407d095,deployed,1,,,,,,,,,,
+d1f407d095,deployed,2,,,,,,,,,,
+d1f407d095,deployed,3,,,,,,,,,,
+d1f407d095,packed,1,,,,,,,,,,
+d1f407d095,packed,2,,,,,,,,,,
+d1f407d095,packed,3,,,,,,,,,,

@@ -1,0 +1,6 @@
+# Install into an isolated Python 3.12 environment.
+cadquery==2.8.0
+trimesh==5.2.0
+ezdxf==1.4.5
+fastapi==0.115.6
+uvicorn==0.34.0

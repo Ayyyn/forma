@@ -1,0 +1,35 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+artifacts/preflight/
+artifacts/runs/
+# Local dependencies and generated state (preserved on disk)
+research/vendor/
+node_modules/
+.venv/
+venv/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+/output/
+/artifacts/
+/checkpoints/
+/benchmarks/
+# Downloaded competition snapshots / third-party checkouts
+/research/competition-2026/
+/research/competition-all-2026-11-01/
+/research/actuator-assembly-probe/
+/research/bugproof/
+/research/frontier_scout/
+/research/*.json
+# Never track credentials or private signing material
+*.pem
+*.key
+credentials.json
+token.json
