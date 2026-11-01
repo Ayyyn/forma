@@ -3,6 +3,7 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 from functools import lru_cache
+from .workspace_requirements import enclosure_features, requirement_state
 import base64
 import csv
 import hashlib
@@ -174,6 +175,12 @@ def built(encoded):
     return build_document(json.loads(encoded), asset_path)
 
 
+@lru_cache(maxsize=20)
+def projected(encoded):
+    doc = json.loads(encoded)
+    return drawing_svg(doc, built(encoded)["parts"])
+
+
 def snapshot(document, cad_lock):
     doc = normalize_document(document)
     with cad_lock:
@@ -186,7 +193,7 @@ def snapshot(document, cad_lock):
         drawing_error = None
         try:
             sheet = (
-                drawing_svg(doc, result["parts"])
+                projected(build_key(doc))
                 if valid
                 else '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800"><rect width="1200" height="800" fill="white"/><text x="50" y="65" font-family="Arial" font-size="25">'
                 + html.escape(doc["name"])
@@ -230,14 +237,23 @@ def snapshot(document, cad_lock):
             "detail": CAPABILITIES["scope"],
         },
     ]
-    if doc["metadata"].get("source_crate_id"):
+    requirements = requirement_state(doc)
+    if requirements["status"] != "unbound":
         checks.append(
             {
                 "id": "crate_scope",
-                "label": "Original enclosure requirements",
-                "status": "info",
-                "detail": "General CAD edits do not requalify original capacity/load requirements. Use the enclosure workspace for its constrained sizing checks.",
+                "label": "Enclosure requirements · " + requirements["status"],
+                "status": (
+                    "stale"
+                    if requirements["status"] == "stale"
+                    else ("pass" if requirements["passed"] else "fail")
+                ),
+                "detail": requirements["detail"],
             }
+        )
+        checks.extend(
+            {**check, "id": "requirement_" + check["id"]}
+            for check in requirements["checks"]
         )
     if drawing_error:
         checks.append(
@@ -250,6 +266,7 @@ def snapshot(document, cad_lock):
         )
     return {
         "document": doc,
+        "requirements_state": requirements,
         "geometry": {
             "parts": meshes,
             "face_meshes": result["face_meshes"],
@@ -457,29 +474,8 @@ def create_router(cad_lock, crate_reader=None):
         if crate_reader is None:
             raise HTTPException(404, "Enclosure conversion is unavailable")
         source = crate_reader(id)
-        features = []
-        names = {}
-        for i, p in enumerate(source["panels"]):
-            x, y, z = p["size_mm"]
-            cx, cy, cz = p["center_mm"]
-            features.append(
-                {
-                    "id": p["id"],
-                    "type": "box",
-                    "name": p["name"],
-                    "params": {
-                        "width": x,
-                        "depth": y,
-                        "height": z,
-                        "cx": cx,
-                        "cy": cy,
-                        "z": cz - z / 2,
-                        "operation": "new_body",
-                    },
-                    "suppressed": False,
-                }
-            )
-            names[f"body_{i+1:03d}"] = p["name"]
+        features = enclosure_features(source["panels"])
+        names = {f"body_{i+1:03d}": p["name"] for i, p in enumerate(source["panels"])}
         doc = {
             "name": source["spec"]["name"],
             "features": features,

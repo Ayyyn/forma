@@ -35,7 +35,9 @@ Ctrl+Z restores the parent; Ctrl+Shift+Z restores the latest child. History can 
 
 Select a feature or face/edge when asking Meta about "this" geometry. It receives the feature definition and bounded selection metadata, proposes declarative operations, and waits for Apply. It never executes generated Python. Manual edits invalidate an older proposal's apply action. Invalid proposals may receive one BREP-feedback repair attempt.
 
-General Studio edits do not automatically requalify the enclosure workspace's capacity/load requirements. Conversion retains the source context and shows this boundary. Use the enclosure workspace for its supported inverse sizing.
+Enclosure conversion retains the source specification and requirements. Studio recomputes enclosure checks while the panel feature definition matches that source. Geometry edits mark the requirements **stale** and remove current numerical requirement results; restoring the source definition restores current checks. Names, colors and notes do not invalidate the definition. General geometry changes still require requalification in the enclosure workspace. Informational checks use an information marker rather than a passing tick.
+
+The enclosure workspace's **Compare stock designs** opens ranked feasible alternatives with mass, capacity, outside dimensions and mass margin. Selecting an alternative creates an unsaved preview; saving creates a revision. Input changes during search invalidate the comparison. Repeated Studio snapshots cache drawing projections; changing the document invalidates that projection.
 
 ## Verification
 

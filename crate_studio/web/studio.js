@@ -663,13 +663,16 @@ function renderSummary() {
 
 function renderFeedback() {
   const checks = state.snapshot?.checks || [],
-    fails = checks.filter((c) => c.status === "fail" || c.passed === false);
+    fails = checks.filter((c) => c.status === "fail" || c.passed === false),
+    stale = checks.some((c) => c.status === "stale");
   $("#feedback-panel").classList.toggle("error", fails.length > 0);
   $("#feedback-title").textContent = fails.length
     ? "Review geometry checks"
-    : state.document.features.length
-      ? "Geometry rebuilt"
-      : "Ready to create";
+    : stale
+      ? "Requirements need review"
+      : state.document.features.length
+        ? "Geometry rebuilt"
+        : "Ready to create";
   $("#feedback-summary").textContent = state.document.features.length
     ? `${checks.length} geometry checks · ${state.snapshot.metrics?.solid_count || 0} solids`
     : "Every feature is evaluated by the CAD engine.";
@@ -677,7 +680,7 @@ function renderFeedback() {
     checks
       .map(
         (c) =>
-          `<div class="check-row ${c.status === "fail" || c.passed === false ? "fail" : ""}"><span>${c.status === "fail" || c.passed === false ? "×" : "✓"}</span><div>${esc(c.label || c.name || c.id || "Check")}${c.detail ? "<br>" + esc(c.detail) : ""}</div></div>`,
+          `<div class="check-row ${c.status === "fail" || c.passed === false ? "fail" : ""}"><span>${c.status === "fail" || c.passed === false ? "×" : c.status === "pass" ? "✓" : c.status === "stale" ? "!" : "i"}</span><div>${esc(c.label || c.name || c.id || "Check")}${c.detail ? "<br>" + esc(c.detail) : ""}</div></div>`,
       )
       .join("") +
     `<p>Geometry verification does not establish strength, material suitability or fabrication readiness.</p>`;

@@ -1129,9 +1129,18 @@ $("#save-requirements").addEventListener("click", async () => {
     button.disabled = false;
   }
 });
+let optionRequest = 0;
+const designContext = () =>
+  JSON.stringify({
+    revision: state.saved?.id,
+    spec: formSpec(),
+    requirements: state.requirements,
+  });
 $("#optimize-design").addEventListener("click", async () => {
   const button = $("#optimize-design"),
     note = $("#optimizer-note");
+  const request = ++optionRequest,
+    context = designContext();
   button.disabled = true;
   note.classList.remove("hidden");
   note.textContent = "Checking configured stock thicknesses…";
@@ -1140,21 +1149,57 @@ $("#optimize-design").addEventListener("click", async () => {
       spec: formSpec(),
       requirements: state.requirements,
     });
-    if (result.best) {
-      const checked = await api("/api/design", {
-        spec: result.best.spec,
-        requirements: result.best.requirements,
-      });
-      useProject(checked, true);
-      note.textContent = `${result.evaluated_count} candidates checked. Best supported design shown as an unsaved preview. ${result.explanation || ""}`;
-      toast("Stock search complete. Review and save the preview.");
-    } else {
-      note.textContent = `No feasible stock design among ${result.evaluated_count} evaluated candidates. ${result.explanation || "No changes applied."}`;
-      toast("No feasible candidate in this supported design family.");
+    if (request !== optionRequest || context !== designContext()) {
+      note.textContent = "Design changed during search. Run comparison again.";
+      return;
     }
-  } catch (e) {
-    note.textContent = e.message;
-    toast(e.message, true);
+    note.textContent = `${result.evaluated_count} candidates checked · ${result.candidates.length} feasible`;
+    if (!result.candidates.length) {
+      note.textContent +=
+        ". No feasible design in the supported stock search family.";
+      return;
+    }
+    const dialog = $("#design-options");
+    $("#options-description").textContent =
+      `${result.candidates.length} feasible alternatives · Ranked by ${state.requirements.objective === "maximize_capacity" ? "capacity" : "empty mass"}. Select one to preview before saving.`;
+    $("#options-scope").textContent = result.explanation;
+    $("#options-error").textContent = "";
+    $("#options-list").innerHTML = result.candidates
+      .map((c, i) => {
+        const m = c.metrics;
+        return `<article class="design-option"><div class="option-heading"><strong>${i === 0 ? "Recommended" : "Alternative " + i}</strong><span>${num(c.spec.thickness_mm)} mm stock</span></div><dl><div><dt>Empty mass</dt><dd>${num(m.mass_kg, 2)} kg</dd></div><div><dt>Clear capacity</dt><dd>${num(m.capacity_l, 2)} L</dd></div><div><dt>Outside dimensions</dt><dd>${num(m.outer_width_mm)} × ${num(m.outer_depth_mm)} × ${num(m.outer_height_mm)} mm</dd></div><div><dt>Mass margin</dt><dd>${num(c.requirements.max_mass_kg - m.mass_kg, 2)} kg</dd></div></dl><button type="button" class="full-button" data-option="${i}">Preview design ↗</button></article>`;
+      })
+      .join("");
+    $("#options-list").onclick = async (event) => {
+      const target = event.target.closest("[data-option]");
+      if (!target || target.disabled) return;
+      const buttons = [...$("#options-list").querySelectorAll("button")];
+      buttons.forEach((b) => (b.disabled = true));
+      try {
+        if (context !== designContext())
+          throw new Error(
+            "Design changed. Close this comparison and search again.",
+          );
+        const candidate = result.candidates[Number(target.dataset.option)];
+        const checked = await api("/api/design", {
+          spec: candidate.spec,
+          requirements: candidate.requirements,
+        });
+        if (!dialog.open || context !== designContext()) return;
+        useProject(checked, true);
+        dialog.close();
+        note.textContent = "Selected alternative shown as an unsaved preview.";
+        toast("Review the design and save to create a revision.");
+      } catch (error) {
+        $("#options-error").textContent = error.message;
+      } finally {
+        buttons.forEach((b) => (b.disabled = false));
+      }
+    };
+    dialog.showModal();
+  } catch (error) {
+    note.textContent = error.message;
+    toast(error.message, true);
   } finally {
     button.disabled = false;
   }

@@ -301,7 +301,7 @@
           <button id="edit-requirements" class="text-button">
             Edit requirements ↗</button
           ><button id="optimize-design" class="full-button">
-            Find stock design <span>↗</span>
+            Compare stock designs <span>↗</span>
           </button>
           <p id="optimizer-note" class="optimizer-note hidden"></p>
         </section>
@@ -357,6 +357,21 @@
           </button>
         </div>
       </form>
+    </dialog>
+    <dialog id="design-options" aria-labelledby="options-title">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <h2 id="options-title">Design alternatives</h2>
+          <button class="icon-button" aria-label="Close comparison">×</button>
+        </div>
+      </form>
+      <p id="options-description"></p>
+      <div id="options-list" class="options-list"></div>
+      <details>
+        <summary>Search scope</summary>
+        <p id="options-scope"></p>
+      </details>
+      <p id="options-error" class="error-text" role="alert"></p>
     </dialog>
     <script type="module" src="/assets/app.js"></script>
   </body>

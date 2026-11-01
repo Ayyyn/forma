@@ -1459,3 +1459,44 @@ dialog textarea {
   font-size: 10px;
   color: #526c94;
 }
+
+#design-options {
+  width: min(960px, 92vw);
+  max-width: 960px;
+}
+.options-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+.design-option {
+  border: 1px solid #dce1e5;
+  border-radius: 10px;
+  padding: 16px;
+  background: #faf9f6;
+}
+.option-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.option-heading span {
+  color: #62748c;
+}
+.design-option dl {
+  font-size: 12px;
+  margin: 18px 0;
+}
+.design-option dl div {
+  margin-bottom: 12px;
+}
+.design-option dt {
+  color: #62748c;
+  margin-bottom: 4px;
+}
+.design-option dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
