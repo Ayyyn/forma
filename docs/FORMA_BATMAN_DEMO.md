@@ -38,3 +38,31 @@ Import the STL into a slicer **in millimetres at 100% scale**, with its broad
 flat face on the bed. It is a single connected, watertight solid. Printer,
 material, extrusion settings and toolpath have not been selected, and no
 physical print has been performed.
+
+## Meta-selected keyring attachment
+
+The follow-up explicitly delegated dimension and placement choices to Meta.
+No attachment dimensions were supplied in that generation prompt. Muse Wonder
+returned a ready proposal in one response, choosing a 14 mm diameter circular
+lug, 6 mm through-hole, and 6 × 17 mm connecting neck, all 3 mm thick. Its lug
+centre is (0, 22) mm. The overall envelope becomes 76.2 × 46 × 3 mm.
+
+The original bat feature, notes and other document fields remain unchanged.
+Three appended features describe the neck, round lug and cylindrical cut.
+`examples/forma-batman-keyring-meta.json` is the exact portable model result;
+Codex did not correct its geometry. The preceding underspecified prompt had
+returned clarification questions; it is retained separately. The successful
+delegated generation cost an estimated $0.120576, with billing unverified.
+
+`research/verify_batman_attachment.py` checks the retained result before applying
+it, then verifies actual app exports. All 25 checks passed: the original solid
+is a subset of the result, the neck has positive-volume overlap with the bat,
+the cylindrical hole is entirely outside the original bat, the bore is open
+through the thickness, the mesh is one connected watertight component with one
+hole, STEP retains analytic circle radii, and measured drawings and editable
+sources agree. Hole clearance and surrounding material are also sampled; they
+are geometric checks, not physical ring-fit or strength tests.
+
+Artifacts are in `output/forma/batman-logo/keyring/`, including the unedited
+model provenance, verification report, updated CAD/print package and screenshots.
+This is one interactive demonstration, excluded from the frozen benchmark.
