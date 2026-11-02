@@ -54,9 +54,9 @@ class MechanicalFeaturesTests(unittest.TestCase):
         body = gear("bevel_gear", p)
         self.assertLess(_bounds(body)[1][0], 25)
         doc = {"features": [{"id": "gear", "type": "bevel_gear", "params": p}]}
-        with tempfile.TemporaryDirectory(
-            dir=Path(__file__).resolve().parents[1] / "output"
-        ) as temp:
+        temporary_root = Path(__file__).resolve().parents[1] / "output"
+        temporary_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as temp:
             exported = export_document(doc, None, temp)
             self.assertTrue(exported["checks"]["passed"], exported["checks"])
             proof = exported["checks"]["step_roundtrip"]
@@ -108,6 +108,22 @@ class MechanicalFeaturesTests(unittest.TestCase):
             ).Volume(),
             1e-7,
         )
+
+    def test_small_single_start_threads_retain_crests_and_core(self):
+        # Regression: a valid Boolean result can still drop the entire ridge,
+        # or retain only the ridge while losing the cylindrical core.
+        for diameter, pitch, length in ((3, 0.5, 6), (4, 0.7, 6), (6, 1, 10)):
+            with self.subTest(diameter=diameter):
+                root = diameter - 1.226869 * pitch
+                body = threaded_body(
+                    dict(major_diameter=diameter, pitch=pitch, length=length)
+                )
+                core = cq.Solid.makeCylinder(root / 2, length)
+                self.assertGreater(body.Volume(), core.Volume() * 1.1)
+                self.assertLess(abs(core.cut(body).Volume()), 1e-5)
+                self.assertAlmostEqual(
+                    _bounds(body)[1][0] - _bounds(body)[0][0], diameter, places=3
+                )
 
     def test_invalid_parameters_and_bounded_plans(self):
         for patch in ({"teeth": True}, {"teeth": 161}, {"backlash": -1}, {"axis": "Q"}):

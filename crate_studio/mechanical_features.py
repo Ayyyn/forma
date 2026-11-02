@@ -1,6 +1,6 @@
 """Reusable native gears and helical threads; no benchmark IDs or reference CAD.
 
-Gear profiles: cq_gears (Apache-2.0). Thread surfaces: cq_warehouse (Apache-2.0).
+Gear profiles: cq_gears (Apache-2.0). Threads: native CadQuery helical sweeps.
 All dimensions mm. These geometric features do not certify a transmission.
 """
 
@@ -117,8 +117,6 @@ def gear(kind, p):
 
 
 def threaded_shaft(p):
-    from cq_warehouse.thread import Thread
-
     major = n(p, "major_diameter", positive=True)
     pitch = n(p, "pitch", positive=True)
     length = n(p, "length", positive=True)
@@ -140,29 +138,45 @@ def threaded_shaft(p):
     if not crest < base < pitch or abs(offset) + crest / 2 >= base / 2:
         raise ValueError("Thread profile widths/offset must fit one nominal pitch")
     lead = pitch * starts
-    turn = Thread(
-        apex_radius=major / 2,
-        apex_width=crest,
-        root_radius=root / 2,
-        root_width=base,
-        pitch=lead,
-        length=length,
-        apex_offset=offset,
-        hand=hand,
-        end_finishes=("raw", "raw"),
-    )
-    turn = cq.Solid(turn.wrapped)
-    core = cq.Solid.makeCylinder(root / 2, length)
-    limit = cq.Solid.makeCylinder(major / 2 + 0.1, length)
-    # Explicit trimming is necessary: library-generated end turns may extend
-    # outside [0,length], including when library square finishes are requested.
-    turns = [
-        turn.rotate((0, 0, 0), (0, 0, 1), 360 * i / starts).intersect(limit)
-        for i in range(starts)
+    # Sweep a closed axial profile along a true helix. Extending the guide on
+    # both ends and clipping afterwards avoids partial end-turn artefacts.
+    # Embed the ridge root into the core; the visible root remains exact.
+    radial_root = root / 2 - min(pitch * 0.05, root * 0.05)
+    points = [
+        (radial_root, -base / 2 - lead),
+        (major / 2, offset - crest / 2 - lead),
+        (major / 2, offset + crest / 2 - lead),
+        (radial_root, base / 2 - lead),
     ]
-    result = core.fuse(*turns)
+    path = cq.Wire.makeHelix(
+        lead, length + 2 * lead, root / 2, lefthand=hand == "left"
+    ).translate((0, 0, -lead))
+    turn = cq.Workplane("XZ").polyline(points).close().sweep(path, isFrenet=True).val()
+    core = cq.Solid.makeCylinder(root / 2, length)
+    extended_core = cq.Solid.makeCylinder(
+        root / 2, length + 4 * lead, cq.Vector(0, 0, -2 * lead)
+    )
+    limit = cq.Solid.makeCylinder(major / 2 + 0.1, length)
+    turns = [turn.rotate((0, 0, 0), (0, 0, 1), 360 * i / starts) for i in range(starts)]
+    # Fuse before clipping: trimming a ridge first can leave coincident end
+    # boundaries that OCCT classifies incorrectly, silently discarding crests.
+    result = extended_core.fuse(*turns).intersect(limit)
     if not result.isValid() or len(result.Solids()) != 1:
         raise ValueError("Thread failed to form a valid joined shaft")
+    expected_ridge_volume = (
+        math.pi
+        * (major + root)
+        / 2
+        * ((major - root) / 2)
+        * (crest + base)
+        / 2
+        * length
+        / pitch
+    )
+    if result.Volume() < core.Volume() + expected_ridge_volume * 0.5 or abs(
+        core.cut(result).Volume()
+    ) > max(1e-5, core.Volume() * 1e-7):
+        raise ValueError("Thread union lost its core or helical crests")
     return result
 
 

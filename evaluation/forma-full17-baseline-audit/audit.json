@@ -1,0 +1,24 @@
+{
+  "recorded_utc": "2026-11-02T10:39:13.405215+00:00",
+  "kind": "Post-failure harness correction, original frozen model/task settings retained",
+  "cases": [
+    "m3x6_socket_head_zminus",
+    "custom_threaded_pair_nonstandard",
+    "compound_right_angle_gearbox_reverse"
+  ],
+  "original_calls_per_case": 1,
+  "remaining_calls_restored_per_case": 1,
+  "max_total_calls_per_task": 2,
+  "baseline_response_count": 25,
+  "forma_response_count": 17,
+  "estimated_baseline_usd": 1.9635088,
+  "source_hashes": {
+    "research/run_forma_full17.py": "ec5e8d0fe83fc4595c5b19bdbbcfd573cd8f4ccbc268c9ede97b0348b7bdff5e",
+    "research/repair_forma_baseline_empty.py": "0d644e874be272fc7f42b2bc6a50a800804cd2bb7a08df50c7c7a06b8f47f56b",
+    "tests/test_forma_full17_harness.py": "edaf324c0e69f8b9c700d0237d426c9c045eb73195a1202c2736491e4c2866cd"
+  },
+  "original_failure_archive": "output/forma/evaluation/full17-baseline-client-failure",
+  "original_frozen_protocol": "evaluation/forma-full17-v1",
+  "grader_changed": false,
+  "model_settings_changed": false
+}

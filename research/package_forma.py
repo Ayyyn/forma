@@ -91,6 +91,44 @@ def main(name="forma-source.zip"):
             "research/forma_resolved_issues.json",
         ]
     ]
+    full_protocol = ROOT / "evaluation/forma-full17-v1/protocol.json"
+    if full_protocol.exists():
+        files += [
+            ROOT / "research/vendor/cad-bench" / p
+            for p in json.loads(full_protocol.read_text(encoding="utf8"))[
+                "upstream_hashes"
+            ]
+        ]
+        files += [
+            p
+            for directory in (
+                "evaluation/forma-full17-v1",
+                "evaluation/forma-full17-thread-repair",
+                "evaluation/forma-full17-baseline-audit",
+                "docs/licenses",
+            )
+            for p in (ROOT / directory).rglob("*")
+            if p.is_file()
+        ]
+        files += [
+            ROOT / p
+            for p in (
+                "docs/FORMA_FULL17.md",
+                "tests/test_mechanical_features.py",
+                "examples/forma-mechanical-gear.json",
+                "research/freeze_forma_full17.py",
+                "research/run_forma_full17.py",
+                "research/replay_forma_full17_repair.py",
+                "research/cadbench_container.py",
+                "research/cadbench_compat.Dockerfile",
+                "research/forma_full17_report.py",
+                "research/verify_forma_full17_release.py",
+                "research/repair_forma_baseline_empty.py",
+                "tests/test_forma_full17_harness.py",
+                "research/package_forma_full17_evidence.py",
+            )
+        ]
+    files = list(set(files))
     load_env()
     secrets = [
         v.encode()

@@ -522,6 +522,22 @@ def performance_evidence():
     return FileResponse(path, filename="forma-performance-evidence.zip")
 
 
+@app.get("/full17")
+def full17_home():
+    path = DATA / "evaluation" / "full17-v1" / "review.html"
+    if not path.is_file():
+        raise HTTPException(404, "Full evaluation report has not been generated")
+    return FileResponse(path)
+
+
+@app.get("/full17-evidence")
+def full17_evidence():
+    path = DATA / "evaluation" / "full17-evidence.zip"
+    if not path.is_file():
+        raise HTTPException(404, "Full evaluation evidence has not been packaged")
+    return FileResponse(path, filename="forma-full17-evidence.zip")
+
+
 @app.get("/demo-package")
 def demo_package():
     path = DATA / "demo-v1" / "instrument-case-package.zip"

@@ -1,0 +1,24 @@
+{
+  "name": "Mechanical features \u00b7 editable gear",
+  "features": [
+    {
+      "id": "gear",
+      "type": "spur_gear",
+      "name": "20 tooth involute gear",
+      "params": {
+        "module": 1.2,
+        "teeth": 20,
+        "thickness": 4,
+        "bore_diameter": 5
+      },
+      "suppressed": false
+    }
+  ],
+  "annotations": [],
+  "display": {
+    "color": "#aab9c7"
+  },
+  "metadata": {
+    "brief": "Editable 20-tooth involute gear, module 1.2 mm, thickness 4 mm, 5 mm bore. Geometry demonstration, not physical validation."
+  }
+}

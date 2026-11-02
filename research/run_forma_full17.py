@@ -53,7 +53,7 @@ def container(mode, source, output, task=None, timeout=None):
         "--network",
         "none",
         "--user",
-        "65534:65534",
+        "1000:1000",
         "--read-only",
         "--cap-drop",
         "ALL",
@@ -112,18 +112,26 @@ def container(mode, source, output, task=None, timeout=None):
     return data
 
 
-def baseline(prompt, folder, run_id):
+def baseline(prompt, folder, run_id, *, resume_empty=False):
     load_env()
     key = os.environ.get("MODEL_API_KEY") or os.environ.get("META_API_KEY")
     if not key:
         raise ValueError("Meta API key missing")
     receipts = wa.RUNS / run_id
-    receipts.mkdir(parents=True, exist_ok=False)
+    if not resume_empty:
+        receipts.mkdir(parents=True, exist_ok=False)
     messages = [
         {"role": "system", "content": BASELINE_SYSTEM},
         {"role": "user", "content": prompt},
     ]
-    events = []
+    events = (
+        [
+            json.loads(l)
+            for l in (receipts / "events.jsonl").read_text(encoding="utf8").splitlines()
+        ]
+        if resume_empty
+        else []
+    )
 
     def log(x):
         events.append(x)
@@ -131,7 +139,47 @@ def baseline(prompt, folder, run_id):
             f.write(json.dumps(wa._redact(x), allow_nan=False) + "\n")
 
     built = None
-    for attempt in range(2):
+    start_attempt = 0
+    if resume_empty:
+        prior = [e for e in events if e.get("kind") == "response"]
+        reservations = [e for e in events if e.get("kind") == "reservation"]
+        if (
+            len(prior) != 1
+            or len(reservations) != 1
+            or prior[0].get("public_response")
+            or prior[0]["transport"].get("http_status") != 200
+            or reservations[0]["request"]["messages"] != messages
+        ):
+            raise ValueError(
+                "Resume is restricted to one successful transport with an empty public response and the identical original prompt"
+            )
+        trial = folder / "attempt-1"
+        trial.mkdir(exist_ok=False)
+        (trial / "final.py").write_text("", encoding="utf8")
+        built = container("build", trial, trial / "build")
+        messages += [
+            {"role": "assistant", "content": ""},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "actual_build_error": built,
+                        "original_instruction": prompt,
+                        "instruction": "Repair the complete program. Preserve the original geometry requirements.",
+                    }
+                ),
+            },
+        ]
+        log(
+            {
+                "kind": "resume_empty_response",
+                "source_response_id": prior[0]["response_id"],
+                "budget_charge_usd": 0,
+                "reason": "Restore the remaining repair after null-content client error; original response retained.",
+            }
+        )
+        start_attempt = 1
+    for attempt in range(start_attempt, 2):
         payload = {
             "model": wa.MODEL,
             "messages": messages,
@@ -163,7 +211,9 @@ def baseline(prompt, folder, run_id):
             )
             body = body if isinstance(body, dict) else {}
             choices = body.get("choices") or []
-            public = choices[0].get("message", {}).get("content", "") if choices else ""
+            public = (
+                (choices[0].get("message", {}).get("content") or "") if choices else ""
+            )
             usage = transport.get("usage") or {}
             valid = all(
                 type(usage.get(k)) is int and usage[k] >= 0
@@ -294,14 +344,17 @@ def main():
             raise ValueError("Frozen manifest mismatch: " + name)
     protocol = load(FROZEN / "protocol.json")
     for name, sha in {
-        **{
-            str(Path("research/vendor/cad-bench") / k): v
-            for k, v in protocol["upstream_hashes"].items()
-        },
-        **protocol["source_hashes"],
+        str(Path("research/vendor/cad-bench") / k): v
+        for k, v in protocol["upstream_hashes"].items()
     }.items():
         if digest(ROOT / name) != sha:
             raise ValueError("Source changed since freeze: " + name)
+    # Regrading retained STEP must verify the original generation snapshot,
+    # rather than requiring the developer to roll back unrelated product fixes.
+    source_root = args.output.resolve() / "source-snapshot" if args.score_only else ROOT
+    for name, sha in protocol["source_hashes"].items():
+        if digest(source_root / name) != sha:
+            raise ValueError("Generation source changed since freeze: " + name)
     tasks = load(FROZEN / "tasks.json")
     folder = args.output.resolve() / args.arm
     folder.mkdir(parents=True, exist_ok=True)
@@ -383,6 +436,20 @@ def main():
                     generation = baseline(task["prompt"], dest, run_id)
             except Exception as exc:
                 generation = {"error": str(exc)[:1500], "receipt_run_id": run_id}
+                ledger = wa.RUNS / run_id / "events.jsonl"
+                if ledger.exists():
+                    responses = [
+                        json.loads(l)
+                        for l in ledger.read_text(encoding="utf8").splitlines()
+                        if json.loads(l).get("kind") == "response"
+                    ]
+                    generation.update(
+                        calls=len(responses),
+                        estimated_cost_usd=sum(
+                            r.get("estimated_cost_usd", 0) for r in responses
+                        ),
+                        response_ids=[r.get("response_id") for r in responses],
+                    )
             generation["elapsed_s"] = time.monotonic() - ts
             generation["receipt_run_id"] = run_id
             dump(generation_path, generation)
