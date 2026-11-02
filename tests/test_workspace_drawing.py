@@ -9,6 +9,8 @@ import cadquery as cq
 import ezdxf
 
 from crate_studio.workspace_drawing import (
+    _scene,
+    PDF_POINTS_PER_UNIT,
     drawing_data,
     drawing_svg,
     export_drawings,
@@ -176,7 +178,7 @@ class WorkspaceDrawingTests(unittest.TestCase):
             ET.fromstring((folder / "drawing.svg").read_text(encoding="utf-8"))
             pdf = (folder / "drawing.pdf").read_bytes()
             self.assertTrue(pdf.startswith(b"%PDF-1.4"))
-            self.assertIn(b"/MediaBox [0 0 1200 800]", pdf)
+            self.assertIn(b"/MediaBox [0 0 1190.55118110 841.88976378]", pdf)
             self.assertIn(b"999 mm REF", pdf)
             dxf = ezdxf.readfile(folder / "drawing.dxf")
             self.assertEqual(dxf.units, 4)
@@ -192,6 +194,42 @@ class WorkspaceDrawingTests(unittest.TestCase):
                 max(p[1] for p in points) - min(p[1] for p in points), 40, places=6
             )
             self.assertFalse(dxf.audit().has_errors)
+
+    def test_thin_part_views_share_print_scale_and_measured_dimension_bars(self):
+        shape = cq.Workplane("XY").box(76.2, 31, 3).val()
+        data = drawing_data({"name": "Thin print"}, [{"shape": shape}])
+        scales = {v["scale_px_per_mm"] for v in data["views"].values()}
+        self.assertEqual(len(scales), 1)
+        self.assertEqual(data["sheet"]["scale_label"], "1:1")
+        dimensions = [i for i in _scene(data) if i.get("role") == "native-dimension"]
+        self.assertEqual(len(dimensions), 6)
+        for dimension in dimensions:
+            a, b = dimension["points"]
+            paper_mm = math.dist(a, b) * PDF_POINTS_PER_UNIT * 25.4 / 72
+            self.assertAlmostEqual(paper_mm, dimension["value_mm"], places=8)
+
+    def test_right_view_preserves_depth_direction_for_asymmetric_part(self):
+        # A distinct upright at the back (+Y) must appear on the right of the
+        # right-side view, and at the top in plan; this catches reflected axes.
+        base = cq.Workplane("XY").box(80, 40, 3, centered=(True, True, False))
+        shape = base.union(
+            cq.Workplane("XY")
+            .box(8, 5, 9, centered=(True, True, False))
+            .translate((20, 17.5, 3))
+        ).val()
+        data = drawing_data({"name": "Direction witness"}, [{"shape": shape}])
+        right = data["views"]["right"]
+        high = [p for line in right["visible"] for p in line if p[1] > 11.9]
+        self.assertTrue(high)
+        self.assertTrue(all(p[0] >= 15 - 1e-6 for p in high))
+        top = data["views"]["top"]
+        self.assertTrue(
+            any(
+                abs(x - 16) < 1e-6 and abs(y - 15) < 1e-6
+                for line in top["visible"]
+                for x, y in line
+            )
+        )
 
 
 if __name__ == "__main__":

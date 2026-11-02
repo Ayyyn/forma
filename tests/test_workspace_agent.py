@@ -53,6 +53,26 @@ def response(p, rid="offline-fixture"):
 
 
 class WorkspaceAgentTests(unittest.TestCase):
+    def test_new_prompt_design_retains_brief_without_overwriting_existing_intent(self):
+        instruction = "make it 40 mm tall"
+        operation = {
+            "action": "add",
+            "feature": {
+                "id": "new",
+                "type": "box",
+                "params": {"width": 10, "depth": 20, "height": 40},
+            },
+        }
+        for metadata, expected in [
+            ({}, instruction),
+            ({"brief": "User-authored intent"}, "User-authored intent"),
+        ]:
+            doc = {"name": "New", "features": [], "metadata": metadata}
+            result = wa.apply_plan(doc, plan([operation]), instruction)
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["document"]["metadata"]["brief"], expected)
+            self.assertEqual(doc["features"], [])
+
     def test_update_preserves_unknown_and_base(self):
         original = base()
         p = plan([{"action": "update", "id": "box", "params": {"height": 40}}])

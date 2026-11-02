@@ -25,6 +25,11 @@ from OCP.HLRAlgo import HLRAlgo_Projector
 from OCP.HLRBRep import HLRBRep_Algo, HLRBRep_HLRToShape
 
 SHEET_WIDTH, SHEET_HEIGHT = 1200, 800
+# Preserve saved annotation coordinates. The logical sheet occupies 420 x 280 mm
+# centred on A3 landscape; PDF and SVG use the same physical drawing scale.
+SHEET_UNITS_PER_MM = SHEET_WIDTH / 420
+PDF_POINTS_PER_UNIT = 72 / 25.4 / SHEET_UNITS_PER_MM
+PDF_WIDTH, PDF_HEIGHT = 420 * 72 / 25.4, 297 * 72 / 25.4
 CURVE_DEFLECTION_MM = 0.02
 VIEWS = {
     "front": ((0, -1, 0), (1, 0, 0), (0, 2), "Front (X / Z)"),
@@ -148,9 +153,22 @@ def drawing_data(doc, parts):
     if not all(math.isfinite(x) and x > 1e-8 for x in dimensions):
         raise ValueError("Drawing requires a nondegenerate 3D BREP")
     views = {}
+    fit = (
+        min(
+            280 / max(dimensions[0], dimensions[1]),
+            360 / max(dimensions[1], dimensions[2]),
+        )
+        / SHEET_UNITS_PER_MM
+    )
+    # Engineering scales, shared across views. Never enlarge one view silently.
+    exponent = math.floor(math.log10(fit))
+    ratio = max(
+        m * 10**exponent for m in (0.1, 0.2, 0.5, 1, 2, 5) if m * 10**exponent <= fit
+    )
+    scale = ratio * SHEET_UNITS_PER_MM
+    scale_label = f"{ratio:g}:1" if ratio >= 1 else f"1:{1 / ratio:g}"
     for index, (key, (direction, x_dir, axes, label)) in enumerate(VIEWS.items()):
         width, height = [dimensions[i] for i in axes]
-        scale = min(280 / width, 360 / height)
         x, y = 55 + 390 * index, 150
         views[key] = {
             **_project(combined, direction, x_dir),
@@ -173,6 +191,14 @@ def drawing_data(doc, parts):
         "bbox_mm": {"min": minimum, "max": maximum, "size": dimensions},
         "projection": "OpenCascade orthographic hidden-line removal from actual BREP",
         "curve_chord_deflection_mm": CURVE_DEFLECTION_MM,
+        "sheet": {
+            "pdf_size_mm": [420, 297],
+            "content_size_mm": [420, 280],
+            "model_scale": ratio,
+            "scale_label": scale_label,
+            "logical_units_per_paper_mm": SHEET_UNITS_PER_MM,
+            "print_instruction": "A3 landscape, actual size / 100%; disable fit to page",
+        },
         "annotation_coordinate_system": "1200 x 800 sheet SVG pixels; view is a grouping tag",
         "user_dimension_policy": "All user dimensions are REF annotations; they do not change or measure model geometry",
     }
@@ -247,10 +273,38 @@ def _scene(data):
         yy = y + height + 22
         line([[x, yy - 7], [x, yy + 7]])
         line([[x + width, yy - 7], [x + width, yy + 7]])
-        line([[x, yy], [x + width, yy]], role="native-dimension", view=key)
+        line(
+            [[x, yy], [x + width, yy]],
+            role="native-dimension",
+            view=key,
+            axis="horizontal",
+            value_mm=v["width_mm"],
+        )
+        xx = x + width + 18
+        line([[xx - 7, y], [xx + 7, y]])
+        line([[xx - 7, y + height], [xx + 7, y + height]])
+        line(
+            [[xx, y], [xx, y + height]],
+            role="native-dimension",
+            view=key,
+            axis="vertical",
+            value_mm=v["height_mm"],
+        )
         text(x, yy + 23, f'Overall width: {v["width_mm"]:.6g} mm', 13)
         text(x, yy + 43, f'Overall height: {v["height_mm"]:.6g} mm', 13)
-        text(x, yy + 64, f"Display scale: {scale:.4g} px/mm", 11, "#697b83")
+        text(
+            x,
+            yy + 64,
+            f'Scale {data["sheet"]["scale_label"]} | same scale in every view',
+            11,
+            "#697b83",
+        )
+    text(835, 615, "Print at 100% / A3 landscape", 12)
+    text(835, 635, "50 mm on paper", 11)
+    ruler = 50 * SHEET_UNITS_PER_MM
+    line([[835, 650], [835 + ruler, 650]], role="paper-calibration")
+    line([[835, 645], [835, 655]])
+    line([[835 + ruler, 645], [835 + ruler, 655]])
     line([[40, 665], [1160, 665]], "#bec8cd")
     text(
         40,
@@ -303,7 +357,7 @@ def _scene(data):
 
 def _svg(data):
     out = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{SHEET_WIDTH}" height="{SHEET_HEIGHT}" viewBox="0 0 1200 800">',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="280mm" viewBox="0 0 1200 800">',
         '<rect width="1200" height="800" fill="white"/>',
         '<g font-family="Arial,sans-serif">',
     ]
@@ -342,7 +396,10 @@ def _pdf(data):
             .replace(")", "\\)")
         )
 
-    commands = []
+    margin = (PDF_HEIGHT - SHEET_HEIGHT * PDF_POINTS_PER_UNIT) / 2
+    commands = [
+        f"q {PDF_POINTS_PER_UNIT:.10f} 0 0 {PDF_POINTS_PER_UNIT:.10f} 0 {margin:.10f} cm"
+    ]
     for item in _scene(data):
         color = [int(item["color"][i : i + 2], 16) / 255 for i in (1, 3, 5)]
         rgb = " ".join(f"{c:.5f}" for c in color)
@@ -362,11 +419,12 @@ def _pdf(data):
                 )
                 + " S"
             )
+    commands.append("Q")
     stream = "\n".join(commands).encode("latin1")
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1200 800] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PDF_WIDTH:.8f} {PDF_HEIGHT:.8f}] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".encode(),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream",
     ]

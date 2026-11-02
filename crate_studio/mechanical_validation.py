@@ -81,6 +81,129 @@ def mesh_relation(first, second):
     return None
 
 
+def validate_target(target, document, prompt=None):
+    if not isinstance(target, dict) or set(target) != {
+        "input_id",
+        "output_id",
+        "ratio",
+        "tolerance",
+        "shaft_groups",
+        "quote",
+    }:
+        raise ValueError("Invalid gear target schema")
+    ids = {
+        f["id"]
+        for f in document["features"]
+        if f.get("type") in ("spur_gear", "bevel_gear") and not f.get("suppressed")
+    }
+    if (
+        target["input_id"] not in ids
+        or target["output_id"] not in ids
+        or target["input_id"] == target["output_id"]
+    ):
+        raise ValueError("Gear target must identify two active gears")
+    ratio = n(target, "ratio")
+    tolerance = n(target, "tolerance")
+    if abs(ratio) < 1e-6 or not 0 <= tolerance <= 0.1:
+        raise ValueError(
+            "Gear target ratio must be nonzero, tolerance between 0 and 0.1"
+        )
+    quote = target["quote"]
+    if (
+        not isinstance(quote, str)
+        or not quote
+        or len(quote) > 6000
+        or (prompt is not None and quote not in prompt)
+    ):
+        raise ValueError("Gear targets require an exact source quote")
+    groups = target["shaft_groups"]
+    if not isinstance(groups, list) or len(groups) > 8:
+        raise ValueError("At most eight explicit shaft groups are supported")
+    for group in groups:
+        if (
+            not isinstance(group, list)
+            or not 2 <= len(group) <= 8
+            or len(set(group)) != len(group)
+            or any(fid not in ids for fid in group)
+        ):
+            raise ValueError("Shaft groups must name distinct active gears")
+
+
+def check_gear_targets(document, report):
+    targets = document.get("metadata", {}).get("gear_targets", [])
+    if not isinstance(targets, list) or len(targets) > 16:
+        raise ValueError("Invalid retained gear targets")
+    if not targets:
+        return []
+    features = {f["id"]: f for f in document["features"]}
+    rows = []
+    for target in targets:
+        validate_target(target, document)
+        graph = {fid: [] for fid in features}
+        for pair in report.get("pairs", []):
+            if "ratio" in pair and pair.get("sampled_minimum_gap_mm", math.inf) <= 0.2:
+                a, b = pair["features"]
+                ratio = pair["ratio"]
+                graph[a].append((b, ratio))
+                graph[b].append((a, 1 / ratio))
+        for group in target["shaft_groups"]:
+            for a, b in zip(group, group[1:]):
+                pa, pb = features[a]["params"], features[b]["params"]
+                ua, ub = VECTORS[pa.get("axis", "+Z")], VECTORS[pb.get("axis", "+Z")]
+                dot = _dot(ua, ub)
+                delta = _sub(_point(pb), _point(pa))
+                if (
+                    abs(dot) != 1
+                    or math.sqrt(max(0, _dot(delta, delta) - _dot(delta, ua) ** 2))
+                    > 1e-5
+                ):
+                    raise ValueError("Declared shared shaft gears are not coaxial")
+                graph[a].append((b, dot))
+                graph[b].append((a, dot))
+        start, end = target["input_id"], target["output_id"]
+        rates = {start: 1.0}
+        pending = [start]
+        conflict = False
+        while pending:
+            source = pending.pop()
+            for dest, ratio in graph[source]:
+                rate = rates[source] * ratio
+                if dest in rates:
+                    if abs(rates[dest] - rate) > max(1e-8, abs(rate) * 1e-5):
+                        conflict = True
+                else:
+                    rates[dest] = rate
+                    pending.append(dest)
+        actual = None
+        if end in rates:
+            sign_start = sum(VECTORS[features[start]["params"].get("axis", "+Z")])
+            sign_end = sum(VECTORS[features[end]["params"].get("axis", "+Z")])
+            actual = rates[end] * sign_end / sign_start
+        passed = (
+            actual is not None
+            and not conflict
+            and abs(actual / target["ratio"] - 1) <= target["tolerance"] + 1e-8
+        )
+        row = {
+            **target,
+            "actual_ratio": actual,
+            "passed": passed,
+            "scope": "Ideal kinematics with explicit rigid shaft couplings; not physical transmission",
+        }
+        if not passed:
+            row["error"] = (
+                "Inconsistent gear loop"
+                if conflict
+                else (
+                    "Disconnected gear train"
+                    if actual is None
+                    else f"Signed output/input ratio {actual:.8g} fails required {target['ratio']:.8g}"
+                )
+            )
+        rows.append(row)
+    return rows
+
+
 def _spur_section(shape, axis):
     import cadquery as cq
     from shapely.geometry import Polygon
@@ -260,5 +383,7 @@ def analyze_gears(document, result, *, motion_samples=16):
                             f"{first['id']} / {second['id']}: prescribed mesh motion interferes ({maximum:.6g} mm3 at sampled poses); correct tooth phase or clearance"
                         )
             report["pairs"].append(pair)
+    report["targets"] = check_gear_targets(document, report)
+    report["errors"].extend(t["error"] for t in report["targets"] if not t["passed"])
     report["passed"] = not report["errors"]
     return report

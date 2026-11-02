@@ -198,14 +198,24 @@ def _apply(kind, p, shapes, asset_loader):
     if not shapes:
         raise ValueError("Operation needs an existing body")
     if kind == "cut_hole":
+        end_condition = p.get("end_condition", "blind")
+        if end_condition not in ("blind", "through_all"):
+            raise ValueError("Hole end_condition must be blind or through_all")
+        body = _union(shapes)
+        if end_condition == "through_all":
+            lo, hi = _bounds(body)
+            start, depth = lo[2] - 1, hi[2] - lo[2] + 2
+        else:
+            start = _number(p, "z", 0)
+            depth = _number(p, "depth", positive=True)
         tool = (
             cq.Workplane("XY")
             .circle(_number(p, "radius", positive=True))
-            .extrude(_number(p, "depth", positive=True))
-            .translate(tuple(_number(p, k, 0) for k in ("x", "y", "z")))
+            .extrude(depth)
+            .translate((_number(p, "x", 0), _number(p, "y", 0), start))
             .val()
         )
-        return _subtract(_union(shapes), tool)
+        return _subtract(body, tool)
     if kind == "face_offset":
         ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
         part_id = p.get("part_id")
@@ -571,6 +581,17 @@ def build_document(doc, asset_loader=None):
             from .mechanical_validation import analyze_gears
 
             mechanical = analyze_gears(doc, result)
+            if (
+                doc.get("metadata", {}).get("gear_targets")
+                and not mechanical["checked"]
+            ):
+                mechanical.update(
+                    checked=True,
+                    passed=False,
+                    errors=[
+                        "Retained gear targets require an independent native gear assembly; suppression or mixed edits cannot silently remove qualification"
+                    ],
+                )
             result["checks"]["mechanical"] = mechanical
             if mechanical["checked"] and not mechanical["passed"]:
                 result["checks"].update(
@@ -599,21 +620,20 @@ def export_document(doc, asset_loader, folder):
         volume_difference = abs(sum(s.Volume() for s in step) - expected)
         step_valid = len(step) == len(shapes) and all(s.isValid() for s in step)
         geometric_difference = None
-        bounds_difference = None
+        source = _compound(shapes)
+        imported = _compound(step)
+        bounds_difference = max(
+            abs(a - b)
+            for aa, bb in zip(_bounds(source), _bounds(imported))
+            for a, b in zip(aa, bb)
+        )
         # STEP can rewrite NURBS surfaces with a different numerical volume
         # integral. In that case prove coincident geometry by symmetric Boolean
         # difference at the SAME tolerance, with an independent bounds check.
         # This is deliberately not a relaxed volume threshold.
         if step_valid and volume_difference > tol:
-            source = _compound(shapes)
-            imported = _compound(step)
             geometric_difference = abs(source.cut(imported).Volume()) + abs(
                 imported.cut(source).Volume()
-            )
-            bounds_difference = max(
-                abs(a - b)
-                for aa, bb in zip(_bounds(source), _bounds(imported))
-                for a, b in zip(aa, bb)
             )
         checks["step_roundtrip"] = {
             "solid_count": len(step),
@@ -623,6 +643,7 @@ def export_document(doc, asset_loader, folder):
             "symmetric_difference_mm3": geometric_difference,
             "bounds_difference_mm": bounds_difference,
             "passed": step_valid
+            and bounds_difference <= 1e-5
             and (
                 volume_difference <= tol
                 or (

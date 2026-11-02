@@ -12,6 +12,9 @@ from research.run_forma_full17 import ROOT, load, dump, digest
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--mechanical-policy", choices=["standard", "design"], default="standard"
+    )
     args = parser.parse_args()
     output = args.output.resolve()
     output.relative_to(ROOT / "output")
@@ -28,10 +31,13 @@ def main():
         if p.is_file() and p.suffix in (".py", ".js", ".html", ".css")
     }
     protocol.update(
-        name="Forma public diagnostic development v2",
+        name="Forma public diagnostic development " + output.name,
         frozen_utc=datetime.now(timezone.utc).isoformat(),
         arms=["forma"],
-        forma_system=wa.SYSTEM,
+        forma_system=(
+            wa.MECHANICAL_SYSTEM if args.mechanical_policy == "design" else wa.SYSTEM
+        ),
+        mechanical_policy=args.mechanical_policy,
         source_hashes=sources,
         retries="At most one schema/native geometry/mechanical preflight repair. No benchmark score feedback during this run.",
         disclosure="Post-failure public diagnostic development. Public instructions, grader and reference implementation inspected during development; not held-out, official rank or a new matched comparison. All 17 tasks retained. No copied reference CAD or benchmark task dispatch in production.",

@@ -340,6 +340,9 @@ def main():
     p.add_argument("--task")
     p.add_argument("--protocol-dir", type=Path, default=FROZEN)
     p.add_argument("--run-prefix", default="full17")
+    p.add_argument(
+        "--mechanical-policy", choices=["standard", "design"], default="standard"
+    )
     args = p.parse_args()
     import re
 
@@ -350,6 +353,14 @@ def main():
         if digest(frozen / name) != sha:
             raise ValueError("Frozen manifest mismatch: " + name)
     protocol = load(frozen / "protocol.json")
+    if not args.score_only and args.arm == "forma":
+        actual_system = (
+            wa.MECHANICAL_SYSTEM if args.mechanical_policy == "design" else wa.SYSTEM
+        )
+        if protocol["forma_system"] != actual_system:
+            raise ValueError(
+                "Selected mechanical policy does not match the recorded protocol"
+            )
     for name, sha in {
         str(Path("research/vendor/cad-bench") / k): v
         for k, v in protocol["upstream_hashes"].items()
@@ -415,6 +426,7 @@ def main():
                         run_id=run_id,
                         use_cache=False,
                         max_tokens=8192,
+                        mechanical_policy=args.mechanical_policy,
                     )
                     dump(dest / "proposal.json", proposal)
                     generation = {

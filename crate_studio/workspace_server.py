@@ -34,10 +34,30 @@ from .workspace_geometry import (
     _bounds as exact_bounds_mm,
 )
 from .workspace_drawing import drawing_svg, export_drawings, validate_annotations
-from .workspace_cache import cached_build, cache_clear, cache_info
+from .workspace_cache import (
+    cached_build,
+    cache_clear,
+    cache_info,
+    VERSION as GEOMETRY_VERSION,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "output/forma/studio"
+# Bind disk artifacts to the code loaded by this process. Reading source hashes
+# per request could label an old imported function with newly edited source.
+EXPORT_VERSION = hashlib.sha256(
+    GEOMETRY_VERSION.encode()
+    + b"".join(
+        Path(__file__).with_name(name).read_bytes()
+        for name in (
+            "workspace_geometry.py",
+            "workspace_drawing.py",
+            "workspace_server.py",
+            "workspace_requirements.py",
+            "workspace_workflow.py",
+        )
+    )
+).hexdigest()[:12]
 DOCS = DATA / "documents"
 ASSETS = DATA / "assets"
 STORE_LOCK = threading.RLock()
@@ -900,19 +920,7 @@ def create_router(cad_lock, crate_reader=None):
         value = read_document(id, cad_lock)
         if format not in CAPABILITIES["exports"]:
             raise HTTPException(404, "Unknown export format")
-        version = hashlib.sha256(
-            b"".join(
-                Path(__file__).with_name(n).read_bytes()
-                for n in [
-                    "workspace_geometry.py",
-                    "workspace_drawing.py",
-                    "workspace_server.py",
-                    "workspace_requirements.py",
-                    "workspace_workflow.py",
-                ]
-            )
-        ).hexdigest()[:12]
-        folder = DATA / "exports" / valid_id(id) / version
+        folder = DATA / "exports" / valid_id(id) / EXPORT_VERSION
         with cad_lock:
             if not (folder / "complete.json").is_file():
                 result = export_document(value["document"], asset_path, folder)
@@ -984,10 +992,40 @@ def create_router(cad_lock, crate_reader=None):
                     json.dumps(portable, indent=2, ensure_ascii=False, allow_nan=False),
                     encoding="utf-8",
                 )
+                (folder / "export-manifest.json").write_text(
+                    json.dumps(
+                        {
+                            "format": "forma-export/v1",
+                            "revision_id": id,
+                            "geometry_signature": value["geometry_signature"],
+                            "generation": "Deterministic native CAD and drawing tools; no model call during export",
+                            "parameters": "project.json retains editable feature parameters, annotations and project metadata; STEP/STL/PDF do not retain the feature history",
+                            "units": {
+                                "workspace.step": "mm, encoded by STEP exporter",
+                                "workspace.stl": "mm by convention; STL itself has no length-unit field",
+                                "drawing.dxf": "mm, INSUNITS=4; model-space projections 1:1",
+                                "drawing.pdf": "A3 landscape; declared common model scale; print 100%",
+                                "drawing.svg": "420 x 280 mm content; declared common model scale",
+                                "body-list.csv": "dimensions mm, volume mm3, area mm2",
+                            },
+                            "drawing_scope": "Measured overall BREP extents, not a complete local-feature/tolerance manufacturing drawing; user dimensions are REF",
+                            "curve_chord_deflection_mm": drawing["measurements"][
+                                "curve_chord_deflection_mm"
+                            ],
+                            "byte_repeatability": "Geometry is regenerated from source; STEP/DXF exporter timestamps or identifiers and ZIP metadata may vary",
+                            "verification": "verification.json contains reopened STEP/STL checks; workflow-report.json binds engineering/motion status to this revision",
+                        },
+                        indent=2,
+                        allow_nan=False,
+                    ),
+                    encoding="utf-8",
+                )
                 files = [
                     p
-                    for p in folder.iterdir()
-                    if p.is_file() and p.suffix != ".zip" and p.name != "complete.json"
+                    for p in sorted(folder.iterdir())
+                    if p.is_file()
+                    and p.suffix != ".zip"
+                    and p.name not in ("complete.json", "sha256.json")
                 ]
                 hashes = {
                     p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files

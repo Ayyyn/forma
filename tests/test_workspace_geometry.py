@@ -2,6 +2,9 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import cadquery as cq
 
 from crate_studio.workspace_geometry import build_document, export_document
 
@@ -11,6 +14,69 @@ def feature(fid, kind, **params):
 
 
 class WorkspaceGeometryTests(unittest.TestCase):
+    def test_step_translation_is_rejected_even_when_volume_is_identical(self):
+        doc = {"features": [feature("plate", "box", width=10, depth=20, height=3)]}
+        original_export = cq.exporters.export
+
+        def shifted_export(shape, path, *args, **kwargs):
+            if str(path).endswith(".step"):
+                shape = shape.translate((12, 0, 0))
+            return original_export(shape, path, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory(
+            dir=Path(__file__).resolve().parents[1] / "output"
+        ) as folder:
+            with patch(
+                "crate_studio.workspace_geometry.cq.exporters.export",
+                side_effect=shifted_export,
+            ):
+                result = export_document(doc, None, folder)
+        self.assertFalse(result["checks"]["passed"])
+        self.assertFalse(result["checks"]["step_roundtrip"]["passed"])
+        self.assertAlmostEqual(
+            result["checks"]["step_roundtrip"]["bounds_difference_mm"], 12
+        )
+        self.assertEqual(result["files"], [])
+
+    def test_through_all_hole_survives_thickness_and_z_revisions(self):
+        for height, z in [(3, 0), (4, 0), (12, -7), (2, 40)]:
+            with self.subTest(height=height, z=z):
+                doc = {
+                    "features": [
+                        feature("plate", "box", width=80, depth=50, height=height, z=z),
+                        feature(
+                            "hole",
+                            "cut_hole",
+                            radius=3,
+                            x=20,
+                            y=10,
+                            end_condition="through_all",
+                            depth=3,
+                            z=0,
+                        ),
+                    ]
+                }
+                result = build_document(doc)
+                self.assertTrue(result["checks"]["passed"])
+                shape = result["parts"][0]["shape"]
+                self.assertAlmostEqual(
+                    shape.Volume(), (80 * 50 - math.pi * 9) * height, places=6
+                )
+                for fraction in (0.01, 0.5, 0.99):
+                    self.assertFalse(shape.isInside((20, 10, z + height * fraction)))
+
+    def test_legacy_hole_remains_fixed_depth_and_invalid_end_conditions_fail(self):
+        doc = {
+            "features": [
+                feature("plate", "box", width=80, depth=50, height=4),
+                feature("hole", "cut_hole", radius=3, depth=3, x=20, y=10),
+            ]
+        }
+        result = build_document(doc)
+        self.assertTrue(result["parts"][0]["shape"].isInside((20, 10, 3.5)))
+        doc["features"][1]["params"]["end_condition"] = "guess"
+        self.assertFalse(build_document(doc)["checks"]["passed"])
+
     def test_explicit_edge_treatment_and_curve_polylines(self):
         first = feature("box", "box", width=30, depth=20, height=10)
         second = feature(

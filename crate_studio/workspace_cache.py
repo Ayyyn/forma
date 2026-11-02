@@ -43,7 +43,14 @@ def cached_build(document, asset_loader=None):
     try:
         assets = asset_identity(document, asset_loader)
         key = json.dumps(
-            [VERSION, document["features"], assets], sort_keys=True, allow_nan=False
+            [
+                VERSION,
+                document["features"],
+                document.get("metadata", {}).get("gear_targets", []),
+                assets,
+            ],
+            sort_keys=True,
+            allow_nan=False,
         )
     except (ValueError, TypeError, KeyError, OSError):
         return build_document(document, asset_loader)

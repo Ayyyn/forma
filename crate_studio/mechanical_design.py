@@ -25,6 +25,9 @@ TRAIN_PARAMS = {
     "addendum_coeff",
     "dedendum_coeff",
     "tangential_backlash",
+    "module_policy",
+    "profile_preset",
+    "complexity_limit_teeth",
 }
 
 
@@ -33,6 +36,55 @@ def design_spur_train(spec):
 
     if not isinstance(spec, dict) or set(spec) - TRAIN_PARAMS:
         raise ValueError("Unsupported spur train specification")
+    preset = spec.get("profile_preset", "full_depth")
+    if preset not in ("full_depth", "compact", "adaptive"):
+        raise ValueError("Unknown gear profile preset")
+    spec = dict(spec)
+    if preset == "adaptive":
+        limit = integer(spec, "complexity_limit_teeth", 64, 24, 480)
+        full = {**spec, "profile_preset": "full_depth"}
+        for key, value in {
+            "pressure_angle": 25,
+            "tangential_backlash": 0.2,
+            "outline_tolerance": 0.025,
+            "module_policy": "custom",
+        }.items():
+            full.setdefault(key, value)
+        try:
+            features, proof = design_spur_train(full)
+        except ValueError as exc:
+            if "No integer tooth solution" not in str(exc):
+                raise
+            features, proof = design_spur_train({**spec, "profile_preset": "compact"})
+            proof["profile_selection"] = (
+                "Compact profile permits an integer solution under explicit limits"
+            )
+            return features, proof
+        if sum(proof["teeth"]) <= limit:
+            proof["profile_selection"] = (
+                "Full-depth profile within the explicit complexity budget"
+            )
+            return features, proof
+        compact, alternative = design_spur_train({**spec, "profile_preset": "compact"})
+        if sum(alternative["teeth"]) < sum(proof["teeth"]):
+            alternative["profile_selection"] = (
+                "Stub profile reduces tooth complexity while preserving explicit constraints and ratio"
+            )
+            return compact, alternative
+        proof["profile_selection"] = (
+            "Explicit constraints retained; alternate profile gives no complexity reduction"
+        )
+        return features, proof
+    if preset == "compact":
+        for key, value in {
+            "pressure_angle": 25,
+            "addendum_coeff": 0.8,
+            "dedendum_coeff": 1,
+            "tangential_backlash": 0.2,
+            "outline_tolerance": 0.025,
+            "module_policy": "custom",
+        }.items():
+            spec.setdefault(key, value)
     prefix = spec.get("prefix", "train")
     if not isinstance(prefix, str) or not re.fullmatch(
         r"[A-Za-z][A-Za-z0-9_]{0,39}", prefix
@@ -65,6 +117,9 @@ def design_spur_train(spec):
     if not 5 <= pressure <= 35 or not 0.5 <= addendum <= 1.5:
         raise ValueError("Unsupported pressure angle or addendum")
     minimum = max(6, math.ceil(2 * addendum / math.sin(math.radians(pressure)) ** 2))
+    policy = spec.get("module_policy", "standard")
+    if policy not in ("standard", "custom"):
+        raise ValueError("module_policy must be standard or custom")
     candidates = []
     for first in range(minimum, maximum + 1):
         for second in range(minimum, maximum + 1):
@@ -89,14 +144,19 @@ def design_spur_train(spec):
                     abs(module - stock) < 1e-6
                     for stock in (0.5, 0.6, 0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5)
                 )
-                candidates.append(
-                    (0 if preferred else 1, sum(teeth), error, module, teeth, achieved)
+                order = (
+                    (0 if preferred else 1, sum(teeth), error)
+                    if policy == "standard"
+                    else (0, error, sum(teeth))
                 )
+                candidates.append((*order, module, teeth, achieved))
     if not candidates:
         raise ValueError(
             "No integer tooth solution within 5% of requested ratio and the stated limits"
         )
-    _, _, error, module, teeth, achieved = min(candidates)
+    chosen = min(candidates)
+    module, teeth, achieved = chosen[-3:]
+    error = abs(achieved / ratio - 1)
     thickness = n(spec, "thickness", positive=True)
     common = {
         "module": module,
@@ -148,6 +208,11 @@ def design_spur_train(spec):
         "relative_error": error,
         "module_mm": module,
         "teeth": teeth,
-        "selection_policy": "Standard modules first, fewest teeth within 5% speed error, then closest ratio; minimum tooth count uses the rack undercut estimate",
+        "selection_policy": (
+            "Standard modules then complexity"
+            if policy == "standard"
+            else "Closest ratio then fewest teeth; custom module allowed"
+        ),
+        "module_policy": policy,
         "scope": "Ideal external-gear kinematics; verify interference and physical transmission separately",
     }

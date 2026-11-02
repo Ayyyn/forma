@@ -1,4 +1,5 @@
 import { createWorkflow } from "/assets/workflow.js";
+import { profileContains } from "/assets/sketch_hit.mjs";
 let workflow;
 const $ = (s) => document.querySelector(s),
   $$ = (s) => [...document.querySelectorAll(s)],
@@ -131,9 +132,10 @@ const definitions = {
   cut_hole: {
     label: "Hole",
     icon: "⊙",
-    params: { radius: 8, depth: 60, x: 0, y: 0, z: -10 },
+    params: { radius: 8, depth: 60, x: 0, y: 0, z: -10, end_condition: "through_all" },
     fields: [
       ["radius", "Radius", "number"],
+      ["end_condition", "End condition", "select", ["blind", "through_all"]],
       ["depth", "Depth", "number"],
       ["x", "Center X", "number"],
       ["y", "Center Y", "number"],
@@ -249,7 +251,7 @@ const threadFields = [["major_diameter", "Major diameter", "number"], ["root_dia
 const gearDefaults = {module: 1, teeth: 20, pressure_angle: 20, phase: 0, backlash: 0, clearance: 0, bore_diameter: 0, bore_angle: 0, cx: 0, cy: 0, z: 0, axis: "+Z", operation: "new_body"};
 const threadDefaults = {major_diameter: 6, pitch: 1, length: 10, starts: 1, profile: "iso", hand: "right", cx: 0, cy: 0, z: 0, axis: "+Z", operation: "new_body"};
 Object.assign(definitions, {
-  spur_gear: {label: "Spur gear", icon: "⚙", params: {...gearDefaults, thickness: 5, outline_tolerance: 0, addendum_coeff: 1, dedendum_coeff: 1.25, tangential_backlash: 0}, fields: [...gearFields, ["thickness", "Thickness", "number"], ["addendum_coeff", "Addendum coefficient", "number"], ["dedendum_coeff", "Dedendum coefficient", "number"], ["tangential_backlash", "Tangential backlash", "number"], ["outline_tolerance", "Outline tolerance (0 = smooth)", "number"], ...mechanicalPlacement]},
+  spur_gear: {label: "Spur gear", icon: "⚙", params: {...gearDefaults, thickness: 5, outline_tolerance: 0, addendum_coeff: 1, dedendum_coeff: 1.25, tangential_backlash: 0}, fields: [...gearFields.map(field => field[0] === "backlash" ? ["backlash", "Legacy backlash coefficient", "number"] : field), ["thickness", "Thickness", "number"], ["addendum_coeff", "Addendum coefficient", "number"], ["dedendum_coeff", "Dedendum coefficient", "number"], ["tangential_backlash", "Tangential backlash", "number"], ["outline_tolerance", "Outline tolerance (0 = smooth)", "number"], ...mechanicalPlacement]},
   bevel_gear: {label: "Bevel gear", icon: "⚙", params: {...gearDefaults, cone_angle: 45, face_width: 4}, fields: [...gearFields, ["cone_angle", "Pitch cone angle", "number"], ["face_width", "Face width", "number"], ...mechanicalPlacement]},
   threaded_body: {label: "Helical thread", icon: "≋", params: {...threadDefaults, external: true, outer_diameter: 10, radial_clearance: 0}, fields: [...threadFields, ["external", "External thread", "boolean"], ["outer_diameter", "Nut outside diameter", "number"], ["radial_clearance", "Radial clearance", "number"], ...mechanicalPlacement]},
   socket_head_screw: {label: "Socket head screw", icon: "⌖", params: {...threadDefaults, head_height: 6, head_diameter: 10, socket_af: 5, socket_depth: 3}, fields: [...threadFields.filter(f=>f[0]!=="profile"), ["head_height", "Head height", "number"], ["head_diameter", "Head diameter", "number"], ["socket_af", "Socket across flats", "number"], ["socket_depth", "Socket depth", "number"], ...mechanicalPlacement]},
@@ -263,7 +265,7 @@ const scope = {
   sketch_extrude:
     "An XY profile extruded along global Z. Added profiles combine with the existing result; cut profiles remove material.",
   cut_hole:
-    "Cuts a cylinder along global +Z from the specified starting point.",
+    "Through all follows the body's Z bounds on every rebuild. Blind uses a fixed depth along +Z from Start Z.",
   fillet:
     "Rounds matching edges on the accumulated result. Large radii or incompatible topology can fail.",
   chamfer: "Bevels matching edges on the accumulated result.",
@@ -444,8 +446,13 @@ function renderInspector() {
     return;
   }
 
-  const def = definitions[f.type] || { label: f.type, fields: [] };
+  const def = { ...(definitions[f.type] || { label: f.type, fields: [] }) };
+  // Legacy holes are fixed-depth. Editing their radius must not change intent.
+  if (f.type === "cut_hole" && !f.params.end_condition)
+    def.params = { ...def.params, end_condition: "blind" };
   const fields = def.fields.filter(([key]) => {
+    if (f.type === "cut_hole" && f.params.end_condition === "through_all" && ["depth", "z"].includes(key))
+      return false;
     if (
       ["fillet", "chamfer"].includes(f.type) &&
       f.params.edge_indices &&
@@ -485,6 +492,10 @@ function renderInspector() {
     if (f.params.shape === "circle") f.params.radius ??= 20;
     renderInspector();
   });
+  $('[data-param="end_condition"]')?.addEventListener("change", () => {
+    readFeatureForm(f);
+    renderInspector();
+  });
   wireSelection();
 }
 
@@ -495,7 +506,7 @@ function fieldHTML([key, label, type, options], params) {
   const unit =
     ["rotation", "phase", "pressure_angle", "cone_angle", "bore_angle"].includes(key)
       ? "deg"
-      : type === "number" &&
+      : type === "number" && !label.endsWith("coefficient") &&
           ![
             "count",
             "teeth",
@@ -515,7 +526,7 @@ function fieldHTML([key, label, type, options], params) {
   if (type === "vector")
     return `<div class="field-label">${label}<span class="field-row three">${["X", "Y", "Z"].map((axis, i) => `<label>${axis}<input data-vector="${key}" data-index="${i}" type="number" value="${value?.[i] ?? 0}" step="any" aria-label="${label} ${axis}" required></label>`).join("")}</span></div>`;
   if (type === "select")
-    return `<label class="field-label">${label}<select data-param="${key}" data-type="text">${options.map((o) => `<option value="${o}" ${value === o ? "selected" : ""}>${o[0].toUpperCase() + o.slice(1)}</option>`).join("")}</select></label>`;
+    return `<label class="field-label">${label}<select aria-label="${esc(label)}" data-param="${key}" data-type="text">${options.map((o) => `<option value="${o}" ${value === o ? "selected" : ""}>${o[0].toUpperCase() + o.slice(1).replaceAll("_", " ")}</option>`).join("")}</select></label>`;
   if (type === "points")
     return `<label class="field-label">${label}<textarea data-param="${key}" data-type="points" placeholder="0,0; 50,0; 25,40">${esc((value || []).map((p) => p.join(", ")).join("; "))}</textarea></label><p class="parameter-note">XY points separated by semicolons. The outline closes automatically.</p>`;
   return `<label class="field-label">${label}${unit ? `<span class="input-unit">${unit}</span>` : ""}<input data-param="${key}" data-type="${optional ? "optional-number" : type}" type="${type === "number" ? "number" : "text"}" ${type === "readonly" ? "readonly" : ""} value="${esc(value ?? (type === "number" && !optional ? 0 : ""))}" ${type === "number" ? `step="any" ${optional ? '' : 'required'}` : ""}></label>`;
@@ -1489,16 +1500,7 @@ canvas.addEventListener("pointerdown", (e) => {
     const candidates = state.document.features.filter(
       (f) => f.type === "sketch_extrude" && !f.suppressed,
     );
-    const hit = candidates.reverse().find((f) => {
-      const p = f.params,
-        dx = world[0] - (p.cx || 0),
-        dy = world[1] - (p.cy || 0);
-      return p.shape === "circle"
-        ? Math.hypot(dx, dy) < p.radius
-        : p.shape === "rectangle"
-          ? Math.abs(dx) < p.width / 2 && Math.abs(dy) < p.depth / 2
-          : false;
-    });
+    const hit = candidates.reverse().find((f) => profileContains(f.params, ...world));
     if (hit) {
       selectFeature(hit.id);
       drawSketch();
@@ -2183,6 +2185,7 @@ $("#save-document").addEventListener("click", () => {
     const f = state.document.features.find((x) => x.id === state.feature);
     readFeatureForm(f);
   }
+  state.document.name = $("#document-name").value.trim() || "Untitled design";
   commitDocument("Saved version");
 });
 $("#document-name").addEventListener("change", (e) => {
