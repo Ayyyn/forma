@@ -81,13 +81,32 @@ def gear(kind, p):
         )
     if kind == "spur_gear":
         width = n(p, "thickness", positive=True)
+        addendum = n(p, "addendum_coeff", 1, positive=True)
+        dedendum = n(p, "dedendum_coeff", 1.25, positive=True)
+        gap = n(p, "tangential_backlash", 0)
+        if not 0.5 <= addendum <= 1.5 or not 0.5 <= dedendum <= 1.75:
+            raise ValueError(
+                "Addendum/dedendum coefficients exceed supported design bounds"
+            )
+        if gap < 0 or gap >= module * 0.5:
+            raise ValueError(
+                "Tangential backlash must be nonnegative and smaller than half the module"
+            )
+        # The legacy coefficient is not a distance; retain its interpretation.
+        effective_backlash = backlash + gap / (
+            module * math.tan(math.radians(pressure))
+        )
+        if math.pi / 2 - effective_backlash * math.tan(math.radians(pressure)) <= 0.1:
+            raise ValueError("Combined backlash leaves insufficient tooth thickness")
         profile = SpurGear(
             module,
             teeth,
             width,
             pressure_angle=pressure,
             clearance=clearance,
-            backlash=backlash,
+            backlash=effective_backlash,
+            addendum_coeff=addendum,
+            dedendum_coeff=dedendum,
         )
     else:
         cone = n(p, "cone_angle", positive=True)
@@ -103,7 +122,12 @@ def gear(kind, p):
             clearance=clearance,
             backlash=backlash,
         )
-    body = profile.build()
+    tolerance = n(p, "outline_tolerance", 0)
+    if tolerance < 0 or tolerance > module * 0.05:
+        raise ValueError("outline_tolerance must be between zero and 5% of module")
+    if tolerance and kind != "spur_gear":
+        raise ValueError("outline_tolerance is supported only for straight spur gears")
+    body = _faceted_spur(profile, width, tolerance) if tolerance else profile.build()
     phase = n(p, "phase", 0)
     if phase:
         body = body.rotate((0, 0, 0), (0, 0, 1), phase)
@@ -114,6 +138,60 @@ def gear(kind, p):
     if kind == "bevel_gear":
         body = body.translate((0, 0, -profile.cone_h))
     return place(body, p)
+
+
+def _simplify_polyline(points, tolerance):
+    """Bounded chord approximation, retaining both ends of each profile curve."""
+    import numpy as np
+
+    points = np.asarray(points, dtype=float)
+    keep = {0, len(points) - 1}
+    pending = [(0, len(points) - 1)]
+    while pending:
+        first, last = pending.pop()
+        if last <= first + 1:
+            continue
+        segment = points[last] - points[first]
+        length_sq = float(segment @ segment)
+        middle = points[first + 1 : last]
+        t = ((middle - points[first]) @ segment) / max(length_sq, 1e-30)
+        nearest = points[first] + np.clip(t, 0, 1)[:, None] * segment
+        distances = np.linalg.norm(middle - nearest, axis=1)
+        index = int(np.argmax(distances))
+        if float(distances[index]) > tolerance:
+            split = first + 1 + index
+            keep.add(split)
+            pending.extend([(first, split), (split, last)])
+    return points[sorted(keep)]
+
+
+def _faceted_spur(profile, width, tolerance):
+    """Explicit chordal native CAD alternative for contact/mesh-sensitive work.
+
+    Keep the library's involute/root curves and pitch geometry. Approximate each
+    densely sampled curve separately; never substitute a benchmark tooth shape.
+    The exact spline representation remains the default for existing documents.
+    """
+    import numpy as np
+
+    points = []
+    curves = (
+        profile.t_lflank_pts,
+        profile.t_tip_pts,
+        profile.t_rflank_pts,
+        profile.t_root_pts,
+    )
+    for tooth in range(profile.z):
+        angle = -math.tau * tooth / profile.z
+        c, s = math.cos(angle), math.sin(angle)
+        rotation = np.array([[c, -s], [s, c]])
+        for curve in curves:
+            for point in _simplify_polyline(curve[:, :2], tolerance) @ rotation.T:
+                if not points or math.dist(points[-1], point) > 1e-8:
+                    points.append(tuple(float(x) for x in point))
+    if math.dist(points[0], points[-1]) < 1e-8:
+        points.pop()
+    return cq.Workplane("XY").polyline(points).close().extrude(width).val()
 
 
 def threaded_shaft(p):

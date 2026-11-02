@@ -249,7 +249,7 @@ const threadFields = [["major_diameter", "Major diameter", "number"], ["root_dia
 const gearDefaults = {module: 1, teeth: 20, pressure_angle: 20, phase: 0, backlash: 0, clearance: 0, bore_diameter: 0, bore_angle: 0, cx: 0, cy: 0, z: 0, axis: "+Z", operation: "new_body"};
 const threadDefaults = {major_diameter: 6, pitch: 1, length: 10, starts: 1, profile: "iso", hand: "right", cx: 0, cy: 0, z: 0, axis: "+Z", operation: "new_body"};
 Object.assign(definitions, {
-  spur_gear: {label: "Spur gear", icon: "⚙", params: {...gearDefaults, thickness: 5}, fields: [...gearFields, ["thickness", "Thickness", "number"], ...mechanicalPlacement]},
+  spur_gear: {label: "Spur gear", icon: "⚙", params: {...gearDefaults, thickness: 5, outline_tolerance: 0, addendum_coeff: 1, dedendum_coeff: 1.25, tangential_backlash: 0}, fields: [...gearFields, ["thickness", "Thickness", "number"], ["addendum_coeff", "Addendum coefficient", "number"], ["dedendum_coeff", "Dedendum coefficient", "number"], ["tangential_backlash", "Tangential backlash", "number"], ["outline_tolerance", "Outline tolerance (0 = smooth)", "number"], ...mechanicalPlacement]},
   bevel_gear: {label: "Bevel gear", icon: "⚙", params: {...gearDefaults, cone_angle: 45, face_width: 4}, fields: [...gearFields, ["cone_angle", "Pitch cone angle", "number"], ["face_width", "Face width", "number"], ...mechanicalPlacement]},
   threaded_body: {label: "Helical thread", icon: "≋", params: {...threadDefaults, external: true, outer_diameter: 10, radial_clearance: 0}, fields: [...threadFields, ["external", "External thread", "boolean"], ["outer_diameter", "Nut outside diameter", "number"], ["radial_clearance", "Radial clearance", "number"], ...mechanicalPlacement]},
   socket_head_screw: {label: "Socket head screw", icon: "⌖", params: {...threadDefaults, head_height: 6, head_diameter: 10, socket_af: 5, socket_depth: 3}, fields: [...threadFields.filter(f=>f[0]!=="profile"), ["head_height", "Head height", "number"], ["head_diameter", "Head diameter", "number"], ["socket_af", "Socket across flats", "number"], ["socket_depth", "Socket depth", "number"], ...mechanicalPlacement]},
@@ -500,6 +500,8 @@ function fieldHTML([key, label, type, options], params) {
             "count",
             "teeth",
             "starts",
+            "addendum_coeff",
+            "dedendum_coeff",
             "source_face",
             "target_face",
             "face_index",

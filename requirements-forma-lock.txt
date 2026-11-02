@@ -56,5 +56,6 @@ wslink==2.6.0
 yarl==1.25.1
 
 # Native involute gears and helical threads; Apache-2.0, pinned source revisions.
+shapely==2.1.2
 cq-gears @ git+https://github.com/meadiode/cq_gears.git@e73874cf17a25447a99b1e7c22a4d5af38560e9c
 cq-warehouse @ git+https://github.com/gumyr/cq_warehouse.git@a57bb7a24762d367d66369f280a24c38a64e73dd

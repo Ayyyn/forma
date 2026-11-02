@@ -15,6 +15,7 @@ from .workspace_geometry import build_document
 VERSION = hashlib.sha256(
     Path(__file__).with_name("workspace_geometry.py").read_bytes()
     + Path(__file__).with_name("mechanical_features.py").read_bytes()
+    + Path(__file__).with_name("mechanical_validation.py").read_bytes()
 ).hexdigest()
 _lock = threading.RLock()
 _values = OrderedDict()

@@ -338,11 +338,18 @@ def main():
     p.add_argument("--generate-only", action="store_true")
     p.add_argument("--score-only", action="store_true")
     p.add_argument("--task")
+    p.add_argument("--protocol-dir", type=Path, default=FROZEN)
+    p.add_argument("--run-prefix", default="full17")
     args = p.parse_args()
-    for name, sha in load(FROZEN / "manifest.json").items():
-        if digest(FROZEN / name) != sha:
+    import re
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,30}", args.run_prefix):
+        raise ValueError("Invalid receipt prefix")
+    frozen = args.protocol_dir.resolve()
+    for name, sha in load(frozen / "manifest.json").items():
+        if digest(frozen / name) != sha:
             raise ValueError("Frozen manifest mismatch: " + name)
-    protocol = load(FROZEN / "protocol.json")
+    protocol = load(frozen / "protocol.json")
     for name, sha in {
         str(Path("research/vendor/cad-bench") / k): v
         for k, v in protocol["upstream_hashes"].items()
@@ -355,7 +362,7 @@ def main():
     for name, sha in protocol["source_hashes"].items():
         if digest(source_root / name) != sha:
             raise ValueError("Generation source changed since freeze: " + name)
-    tasks = load(FROZEN / "tasks.json")
+    tasks = load(frozen / "tasks.json")
     folder = args.output.resolve() / args.arm
     folder.mkdir(parents=True, exist_ok=True)
     for task in tasks:
@@ -386,7 +393,8 @@ def main():
             )
             ts = time.monotonic()
             run_id = (
-                "full17-"
+                args.run_prefix
+                + "-"
                 + args.arm
                 + "-"
                 + hashlib.sha256(str(dest).encode()).hexdigest()[:16]

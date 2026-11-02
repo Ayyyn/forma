@@ -51,7 +51,12 @@ def snapshot():
             "reservations": Decimal(0),
             "missing_estimates": 0,
         }
-        for name in ("Earlier Forma work", "Full17 Forma", "Full17 Build123D")
+        for name in (
+            "Earlier Forma work",
+            "Full17 Forma",
+            "Full17 Build123D",
+            "Diagnostic development",
+        )
     }
     ledgers = []
     counts = Counter()
@@ -69,12 +74,16 @@ def snapshot():
             )
             run_id = path.parent.name
             key = (
-                "Full17 Forma"
-                if run_id.startswith("full17-forma-")
+                "Diagnostic development"
+                if run_id.startswith("diagnostic-")
                 else (
-                    "Full17 Build123D"
-                    if run_id.startswith("full17-build123d-")
-                    else "Earlier Forma work"
+                    "Full17 Forma"
+                    if run_id.startswith("full17-forma-")
+                    else (
+                        "Full17 Build123D"
+                        if run_id.startswith("full17-build123d-")
+                        else "Earlier Forma work"
+                    )
                 )
             )
             group = groups[key]

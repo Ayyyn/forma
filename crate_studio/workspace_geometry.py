@@ -567,6 +567,15 @@ def build_document(doc, asset_loader=None):
             brep_valid=all(s.isValid() for s in shapes),
             error=error if failed else (None if shapes else "No active solid geometry"),
         )
+        if result["checks"]["passed"]:
+            from .mechanical_validation import analyze_gears
+
+            mechanical = analyze_gears(doc, result)
+            result["checks"]["mechanical"] = mechanical
+            if mechanical["checked"] and not mechanical["passed"]:
+                result["checks"].update(
+                    passed=False, error="; ".join(mechanical["errors"])
+                )
     except Exception as exc:
         result["checks"].update(
             passed=False, error=f"Inspection failed: {str(exc)[:400]}"
