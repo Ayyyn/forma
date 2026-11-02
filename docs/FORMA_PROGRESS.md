@@ -1,5 +1,7 @@
 # Forma progress — November 1, 2026
 
+The dated increments below are historical snapshots and retain their original task counts and measurements. See [the full public evaluation](FORMA_FULL17.md) for the latest verified benchmark results.
+
 ## First implementation increment
 
 Baseline commit: `ce79818`. Source is versioned locally. No remote has been configured. Generated evidence and local projects are retained under ignored directories and need a separate backup.
@@ -46,7 +48,6 @@ Browser checks: manual thickness change, visible engineering failure, feasible a
 
 Physical measurements, engineered hinges, general origami/mechanism solving, general FEA, photo interpretation, broader held-out evaluation and production deployment are still pending. The stage canvas currently has fixed stage positions and session-local navigation. Follow [the build plan](FORMA_BUILD_PLAN.md).
 
-
 ## Frozen evaluation and end-to-end demonstration
 
 Frozen commit `de8eae9` records 20 constructed revision tasks and 11 preselected CAD-bench geometry tasks. Initial live results: 19/20 revisions; 10/11 public tasks above a fixed 0.95 threshold; public mean upstream overall score 0.98830127. The unmodified external STEP scorer and all 11 reference oracles were checked in an isolated Build123D runtime. This is a local adapted public subset, not an official full benchmark run.
@@ -73,3 +74,7 @@ It was not promoted after a material-stock regression. Medium reasoning also
 failed with that incomplete context; adding proposed-material stock catalogues
 restored the unchanged steel task in a targeted full/medium rerun. No new full
 post-fix suite claim is made. See [FORMA_PERFORMANCE.md](FORMA_PERFORMANCE.md).
+
+## Complete public evaluation — November 2
+
+Editable spur/bevel gears, bores, threads and socket-head screws are implemented. All 17 public CAD-bench tasks were evaluated with a controlled Meta-only Build123D baseline. Initial Forma score: 68.94%; explicitly labelled same-plan thread-engine replay: 70.94%; baseline: 66.35%. Ten Forma tasks meet the 0.95 threshold; functional/profile failures remain visible. All 42 model responses, including restored baseline repairs and corrected accounting, are retained. The final source extraction passed 98 checks. See [FORMA_FULL17.md](FORMA_FULL17.md).

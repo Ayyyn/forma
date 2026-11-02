@@ -33,3 +33,6 @@ Thumbs.db
 *.key
 credentials.json
 token.json
+# Private engineering record; publish only with explicit user approval
+/docs/FORMA_ENGINEERING_LOG.md
+/docs/FORMA_BUDGET_SNAPSHOT.json

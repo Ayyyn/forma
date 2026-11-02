@@ -87,6 +87,4 @@ Reused: `scripts/api_preflight.py` for server-side environment loading and API t
 
 Before hackathon submission: a designer review of a real revision and a physical prototype would strengthen impact evidence. Public repository publication and the three-minute demo submission are separate remaining submission tasks. This project does not yet establish customer time savings or winning probability.
 
-
-
 Full public CAD-bench coverage, native editable gears/threads, controlled Meta-only results and limitations: [full evaluation](../docs/FORMA_FULL17.md). Open `/full17` in the running app for all 17 results and retained evidence.

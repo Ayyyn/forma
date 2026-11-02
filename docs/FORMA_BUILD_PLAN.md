@@ -1,6 +1,6 @@
 # Forma implementation plan
 
-Updated November 1, 2026. Product direction is fixed: an editable CAD workflow with requirements, design alternatives, bounded folding and fabrication outputs.
+Updated November 2, 2026. Product direction is fixed: an editable CAD workflow with requirements, design alternatives, bounded folding and fabrication outputs.
 
 ## Delivered first increment
 
@@ -19,7 +19,7 @@ Delivered: shared Project editing and regeneration, bounded AI enclosure patches
 2. **Interactive performance — initial improvements delivered.** Geometry and drawing caches have separate inputs; brief/display changes reuse both; hidden model rendering pauses. Next: browser-level latency profiles, superseded manual-preview cancellation and incremental regeneration for larger models. Targets remain under 100 ms for local interaction and under 1 s for representative simple geometry updates; no broad speed claim yet.
 3. **Folding — wall study delivered.** Thickness-aware rectangular panel motion, editable angle/sample count, overlap checks, playback and export report. Remaining: engineered hinges, contact/load behavior and physical calibration. Ideal Miura/accordion remains separate and labeled with zero-thickness assumptions.
 4. **Project canvas — delivered.** Warm neutral left-to-right stages, minimap, model overview, stage navigation and focused editors. Remaining: arbitrary stage placement, saved navigation and canvas annotations.
-5. **Evaluation — pending.** Freeze a small external CAD subset after checking compatibility and licenses. Publish selection, failures, adaptations and fixed model budgets. Add a separate 20-task revision suite and equal-budget model comparison. No official benchmark claim for adapted tasks.
+5. **Evaluation — complete public coverage, further validation open.** The frozen 20-task revision suite and earlier 11-task subset are retained. All 17 public CAD-bench tasks now have results with a controlled Meta-only baseline, fixed call/token limits, unmodified Linux STEP grading and original failures. The same-plan engine repair is labelled separately. See [FORMA_FULL17.md](FORMA_FULL17.md). Next: held-out tasks, repeat trials and controlled generation hardware. No official leaderboard claim for adapted tasks.
 6. **Physical demo — pending.** Separate flat panel STEP/STL files and the mockup protocol are delivered. For November 2, print a thickness/hinge coupon before the complete assembly, then retain measurements, print settings and failures.
 
 ## Release gates
