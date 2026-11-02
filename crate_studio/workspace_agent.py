@@ -57,7 +57,42 @@ PARAMS = {
     "face_offset": {"part_id", "face_index", "distance"},
     "import_step": {"asset_id"},
 }
+_PLACEMENT = {"cx", "cy", "z", "axis", "operation"}
+_GEAR = _PLACEMENT | {
+    "module",
+    "teeth",
+    "pressure_angle",
+    "clearance",
+    "backlash",
+    "phase",
+    "bore_diameter",
+    "bore_flat",
+    "bore_angle",
+}
+_THREAD = _PLACEMENT | {
+    "major_diameter",
+    "root_diameter",
+    "pitch",
+    "length",
+    "starts",
+    "profile",
+    "hand",
+    "crest_width",
+    "root_width",
+    "apex_offset",
+}
+PARAMS.update(
+    {
+        "spur_gear": _GEAR | {"thickness"},
+        "bevel_gear": _GEAR | {"cone_angle", "face_width"},
+        "threaded_body": _THREAD | {"external", "outer_diameter", "radial_clearance"},
+        "socket_head_screw": _THREAD
+        | {"head_height", "head_diameter", "socket_af", "socket_depth"},
+    }
+)
 SYSTEM = """You are Forma Studio's bounded CAD feature-history planner. Return only JSON, never executable code.
+Mechanical features are native editable solids. spur_gear(module,teeth:int,thickness,pressure_angle=20,clearance=0,backlash=0,phase=0,bore_diameter=0,optional bore_flat,bore_angle=0) creates an involute gear from z=0 to thickness before placement. Standard pitch diameter=module*teeth, outside diameter=module*(teeth+2), centre distance=module*(teeth1+teeth2)/2. phase is tooth rotation in degrees before the bore is cut. bore_flat is the signed local X coordinate of a D-bore flat, retaining bore space x<=bore_flat; bore_angle rotates that bore independently. bevel_gear(module,teeth:int,cone_angle,face_width, same gear options) uses spherical involute teeth; cone_angle is the pitch cone half-angle in degrees, face_width is along the cone generator. Its placement point is the pitch cone APEX and axis points from the large base towards the apex; the solid extends in the negative axial direction from that apex. Mating perpendicular bevel gears share an apex and cone angles sum to 90 degrees; tan(angle1)=teeth1/teeth2. Phase affects meshing; do not assume untested gears transmit motion.
+threaded_body(major_diameter,pitch,length,starts:int=1,root_diameter optional,profile iso/buttress,hand right/left,external=true, optional crest_width,root_width,apex_offset) creates a real helical thread, clipped to local z=0..length. pitch is axial spacing between adjacent starts; lead=pitch*starts. Defaults: root_diameter=major_diameter-1.226869*pitch, crest_width=pitch/8,root_width=.75*pitch,apex_offset=0 for iso or .2*pitch for asymmetric buttress. Widths must satisfy crest_width<root_width<pitch and abs(apex_offset)+crest_width/2<root_width/2. For an internal thread use external=false, outer_diameter and optional radial_clearance (radial gap added to both thread radii). socket_head_screw(major_diameter,pitch,length,head_diameter,head_height,socket_af,socket_depth, optional thread parameters) uses under-head length, head top at local z=0, entire screw below z=0, with a hex socket of specified across-flats size. Mechanical features accept cx,cy,z,axis +X/-X/+Y/-Y/+Z/-Z and operation new_body(default)/add/cut. For spur gears and threads placement is the start point; for screws it is the head top; for bevel gears it is the cone apex. Keep independent moving parts as new_body. Dimensions and actual BREP validity do not establish dynamic transmission performance.
 Stock thickness catalogues are material-specific. For a material change, use the proposed material's catalogue in engineering_context.material_profiles; retained checks describing the old material are not constraints on the new material's stock catalogue. Geometry and all user requirements still need to pass after the change.
 Schema exactly: {"summary":string,"status":"ready"|"clarify","operations":array,"questions":array of strings,"evidence":array of {"quote":string}}.
 Operations: {"action":"add","feature":{"id":unique string,"type":supported type,"name":string,"params":object,"suppressed":false}}; {"action":"update","id":existing id,"params":changed parameters only,"name":optional string}; {"action":"suppress","id":existing id,"value":boolean}; {"action":"delete","id":existing id}.
@@ -339,6 +374,7 @@ def _propose_document(
     selection_context=None,
     context_mode="full",
     reasoning_effort="medium",
+    max_tokens=4096,
 ):
     if not isinstance(prompt, str) or not 0 < len(prompt.strip()) <= 6000:
         raise ValueError("Instruction must contain 1Ã¢â‚¬â€œ6000 characters")
@@ -463,7 +499,7 @@ def _propose_document(
             payload = {
                 "model": MODEL,
                 "messages": messages,
-                "max_tokens": 4096,
+                "max_tokens": max_tokens,
                 "temperature": 0.15,
                 "reasoning_effort": reasoning_effort,
                 "prompt_cache_key": "forma-studio-"
@@ -475,7 +511,7 @@ def _propose_document(
                     "Workspace context exceeds the bounded model input limit."
                 )
                 break
-            reservation = len(encoded) * 4e-6 + 4096 * 20e-6
+            reservation = len(encoded) * 4e-6 + max_tokens * 20e-6
             with agent._spend_lock:
                 if estimated_spend() + reservation > agent.CAP_USD:
                     proposal["summary"] = (
@@ -645,9 +681,12 @@ def propose_document(
     context_mode=None,
     reasoning_effort=None,
     use_cache=True,
+    max_tokens=4096,
 ):
     from . import proposal_cache
 
+    if type(max_tokens) is not int or not 1024 <= max_tokens <= 8192:
+        raise ValueError("max_tokens must be an integer in [1024, 8192]")
     mode = context_mode or DEFAULT_CONTEXT_MODE
     effort = reasoning_effort or DEFAULT_REASONING_EFFORT
     if mode not in ("full", "compact", "focused") or effort not in (
@@ -672,7 +711,7 @@ def propose_document(
         "system": SYSTEM,
         "context_mode": mode,
         "reasoning_effort": effort,
-        "max_tokens": 4096,
+        "max_tokens": max_tokens,
     }
     key = proposal_cache.identity(
         base_doc, prompt, selection_context, settings, asset_loader
@@ -728,6 +767,7 @@ def propose_document(
             selection_context,
             mode,
             effort,
+            max_tokens,
         )
         proposal["cache"] = {"hit": False, "key": key, "bypassed": not use_cache}
         if use_cache and proposal["status"] == "ready":

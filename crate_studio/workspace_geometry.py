@@ -128,6 +128,10 @@ def _checked(shapes):
 
 
 def _apply(kind, p, shapes, asset_loader):
+    if kind in ("spur_gear", "bevel_gear", "threaded_body", "socket_head_screw"):
+        from .mechanical_features import apply_mechanical
+
+        return apply_mechanical(kind, p, shapes)
     if kind in ("box", "cylinder", "sketch_extrude"):
         style = p.get("shape", "rectangle") if kind == "sketch_extrude" else kind
         height = _number(p, "height", positive=True)
@@ -583,12 +587,41 @@ def export_document(doc, asset_loader, folder):
         step = cq.importers.importStep(str(dest / "workspace.step")).solids().vals()
         expected = result["metrics"]["volume_mm3"]
         tol = max(1e-6, expected * 1e-8)
+        volume_difference = abs(sum(s.Volume() for s in step) - expected)
+        step_valid = len(step) == len(shapes) and all(s.isValid() for s in step)
+        geometric_difference = None
+        bounds_difference = None
+        # STEP can rewrite NURBS surfaces with a different numerical volume
+        # integral. In that case prove coincident geometry by symmetric Boolean
+        # difference at the SAME tolerance, with an independent bounds check.
+        # This is deliberately not a relaxed volume threshold.
+        if step_valid and volume_difference > tol:
+            source = _compound(shapes)
+            imported = _compound(step)
+            geometric_difference = abs(source.cut(imported).Volume()) + abs(
+                imported.cut(source).Volume()
+            )
+            bounds_difference = max(
+                abs(a - b)
+                for aa, bb in zip(_bounds(source), _bounds(imported))
+                for a, b in zip(aa, bb)
+            )
         checks["step_roundtrip"] = {
             "solid_count": len(step),
             "volume_mm3": sum(s.Volume() for s in step),
-            "passed": len(step) == len(shapes)
-            and all(s.isValid() for s in step)
-            and abs(sum(s.Volume() for s in step) - expected) <= tol,
+            "integrated_volume_difference_mm3": volume_difference,
+            "volume_tolerance_mm3": tol,
+            "symmetric_difference_mm3": geometric_difference,
+            "bounds_difference_mm": bounds_difference,
+            "passed": step_valid
+            and (
+                volume_difference <= tol
+                or (
+                    geometric_difference is not None
+                    and geometric_difference <= tol
+                    and bounds_difference <= 1e-5
+                )
+            ),
         }
         union = _union(shapes)
         cq.exporters.export(union, str(dest / "workspace.stl"))

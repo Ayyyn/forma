@@ -243,7 +243,23 @@ const definitions = {
   },
 };
 
+const mechanicalPlacement = [["cx", "Position X", "number"], ["cy", "Position Y", "number"], ["z", "Position Z", "number"], ["axis", "Axis", "select", ["+Z", "-Z", "+X", "-X", "+Y", "-Y"]], ["operation", "Operation", "select", ["new_body", "add", "cut"]]];
+const gearFields = [["module", "Module", "number"], ["teeth", "Teeth", "number"], ["pressure_angle", "Pressure angle", "number"], ["phase", "Tooth phase", "number"], ["backlash", "Backlash", "number"], ["clearance", "Root clearance", "number"], ["bore_diameter", "Bore diameter", "number"], ["bore_flat", "D-bore flat X (optional)", "optional-number"], ["bore_angle", "Bore angle", "number"]];
+const threadFields = [["major_diameter", "Major diameter", "number"], ["root_diameter", "Root diameter (optional)", "optional-number"], ["pitch", "Pitch", "number"], ["length", "Length", "number"], ["starts", "Starts", "number"], ["hand", "Hand", "select", ["right", "left"]], ["profile", "Profile", "select", ["iso", "buttress"]], ["crest_width", "Crest width (optional)", "optional-number"], ["root_width", "Root width (optional)", "optional-number"], ["apex_offset", "Crest offset (optional)", "optional-number"]];
+const gearDefaults = {module: 1, teeth: 20, pressure_angle: 20, phase: 0, backlash: 0, clearance: 0, bore_diameter: 0, bore_angle: 0, cx: 0, cy: 0, z: 0, axis: "+Z", operation: "new_body"};
+const threadDefaults = {major_diameter: 6, pitch: 1, length: 10, starts: 1, profile: "iso", hand: "right", cx: 0, cy: 0, z: 0, axis: "+Z", operation: "new_body"};
+Object.assign(definitions, {
+  spur_gear: {label: "Spur gear", icon: "⚙", params: {...gearDefaults, thickness: 5}, fields: [...gearFields, ["thickness", "Thickness", "number"], ...mechanicalPlacement]},
+  bevel_gear: {label: "Bevel gear", icon: "⚙", params: {...gearDefaults, cone_angle: 45, face_width: 4}, fields: [...gearFields, ["cone_angle", "Pitch cone angle", "number"], ["face_width", "Face width", "number"], ...mechanicalPlacement]},
+  threaded_body: {label: "Helical thread", icon: "≋", params: {...threadDefaults, external: true, outer_diameter: 10, radial_clearance: 0}, fields: [...threadFields, ["external", "External thread", "boolean"], ["outer_diameter", "Nut outside diameter", "number"], ["radial_clearance", "Radial clearance", "number"], ...mechanicalPlacement]},
+  socket_head_screw: {label: "Socket head screw", icon: "⌖", params: {...threadDefaults, head_height: 6, head_diameter: 10, socket_af: 5, socket_depth: 3}, fields: [...threadFields.filter(f=>f[0]!=="profile"), ["head_height", "Head height", "number"], ["head_diameter", "Head diameter", "number"], ["socket_af", "Socket across flats", "number"], ["socket_depth", "Socket depth", "number"], ...mechanicalPlacement]},
+});
+
 const scope = {
+  spur_gear: "Native involute gear. Position is the bottom centre before axis rotation. Phase rotates teeth independently of the bore.",
+  bevel_gear: "Position is the pitch cone apex. Axis points from the large base towards the apex. Mating gears share an apex; verify actual clearance and motion.",
+  threaded_body: "Real helical geometry, clipped to its length. Lead equals pitch times starts. Internal clearance is radial. Geometric fit is not a manufacturing qualification.",
+  socket_head_screw: "Head top is at the position; the shaft extends against the selected axis. Length excludes the head.",
   sketch_extrude:
     "An XY profile extruded along global Z. Added profiles combine with the existing result; cut profiles remove material.",
   cut_hole:
@@ -474,12 +490,16 @@ function renderInspector() {
 
 function fieldHTML([key, label, type, options], params) {
   const value = params[key];
+  const optional = type === "optional-number";
+  if (optional) type = "number";
   const unit =
-    key === "rotation"
+    ["rotation", "phase", "pressure_angle", "cone_angle", "bore_angle"].includes(key)
       ? "deg"
       : type === "number" &&
           ![
             "count",
+            "teeth",
+            "starts",
             "source_face",
             "target_face",
             "face_index",
@@ -496,7 +516,7 @@ function fieldHTML([key, label, type, options], params) {
     return `<label class="field-label">${label}<select data-param="${key}" data-type="text">${options.map((o) => `<option value="${o}" ${value === o ? "selected" : ""}>${o[0].toUpperCase() + o.slice(1)}</option>`).join("")}</select></label>`;
   if (type === "points")
     return `<label class="field-label">${label}<textarea data-param="${key}" data-type="points" placeholder="0,0; 50,0; 25,40">${esc((value || []).map((p) => p.join(", ")).join("; "))}</textarea></label><p class="parameter-note">XY points separated by semicolons. The outline closes automatically.</p>`;
-  return `<label class="field-label">${label}${unit ? `<span class="input-unit">${unit}</span>` : ""}<input data-param="${key}" data-type="${type}" type="${type === "number" ? "number" : "text"}" ${type === "readonly" ? "readonly" : ""} value="${esc(value ?? (type === "number" ? 0 : ""))}" ${type === "number" ? 'step="any" required' : ""}></label>`;
+  return `<label class="field-label">${label}${unit ? `<span class="input-unit">${unit}</span>` : ""}<input data-param="${key}" data-type="${optional ? "optional-number" : type}" type="${type === "number" ? "number" : "text"}" ${type === "readonly" ? "readonly" : ""} value="${esc(value ?? (type === "number" && !optional ? 0 : ""))}" ${type === "number" ? `step="any" ${optional ? '' : 'required'}` : ""}></label>`;
 }
 
 function readFeatureForm(f) {
@@ -505,10 +525,11 @@ function readFeatureForm(f) {
   $$("[data-param]").forEach((el) => {
     const type = el.dataset.type;
     if (type === "readonly") return;
+    if (type === "optional-number" && el.value === "") { delete f.params[el.dataset.param]; return; }
     f.params[el.dataset.param] =
       type === "boolean"
         ? el.checked
-        : type === "number"
+        : (type === "number" || type === "optional-number")
           ? Number(el.value)
           : type === "points"
             ? el.value

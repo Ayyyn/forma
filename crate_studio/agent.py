@@ -22,7 +22,7 @@ from .engine import (
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "output" / "forma" / "agent"
 MODEL = "muse-wonder-1.0"
-CAP_USD = 10.0
+CAP_USD = 25.0
 _spend_lock = threading.Lock()
 SYSTEM = """You are Forma's engineering intent planner for one supported family: rectangular, uniform-thickness, butt-joint panel crates/enclosures. Interpret the user's requested revision against the current design and retained requirements. You control a deterministic geometry and stock-sizing environment; do not generate code.
 Earlier instructions, when supplied, are the user's preceding requests in this same uncommitted proposal conversation. Use them to resolve follow-ups and clarification answers; the latest request takes precedence. Their requested requirements remain relevant unless withdrawn or superseded. The saved project remains the approved baseline. A failed proposal was not applied. Evidence may quote either the current instruction or those actual earlier instructions. Never treat a prior model summary as user authorization.

@@ -1,0 +1,104 @@
+[
+  {
+    "id": "cube_20mm_z_minus",
+    "order": 1,
+    "difficulty": "easy",
+    "prompt": "Create one solid cube.\n\nRequirements:\n- Side length exactly 20.0 mm.\n- Faces aligned to global X/Y/Z axes.\n- Top face lies on z=0.\n- Entire cube is in z<=0.\n- Center on X/Y is at (0, 0)."
+  },
+  {
+    "id": "box_30x20x10_z_plus",
+    "order": 2,
+    "difficulty": "easy",
+    "prompt": "Create one rectangular box.\n\nRequirements:\n- Dimensions: 30.0 mm (X) x 20.0 mm (Y) x 10.0 mm (Z).\n- Faces aligned with global axes.\n- Bottom face lies on z=0 and the part is entirely in z>=0.\n- Center on X/Y is at (0, 0)."
+  },
+  {
+    "id": "ring_30_20_h10_z_plus",
+    "order": 3,
+    "difficulty": "easy",
+    "prompt": "Create an annular ring spacer.\n\nRequirements:\n- Axis is global Z.\n- Outer diameter: 30.0 mm.\n- Inner diameter (through-bore): 20.0 mm.\n- Height: 10.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Centered at (0, 0) in XY."
+  },
+  {
+    "id": "l_bracket_40x40x6_2_hole",
+    "order": 4,
+    "difficulty": "medium",
+    "prompt": "Create an L-bracket plate.\n\nRequirements:\n- Plate thickness: 6.0 mm along +Z.\n- Bottom face lies on z=0; entire part in z>=0.\n- XY footprint is the union of:\n  - rectangle [0,40]x[0,20]\n  - rectangle [0,20]x[0,40]\n- Through-holes (diameter 6.0 mm) along +Z at centers:\n  - (10, 10)\n  - (30, 10)"
+  },
+  {
+    "id": "aluminum_extrusion_20x20x60_5_bore",
+    "order": 5,
+    "difficulty": "medium",
+    "prompt": "Create a simple aluminum-extrusion-like bar segment.\n\nRequirements:\n- Outer body is a 20.0 x 20.0 mm square prism, length 60.0 mm.\n- Axis is global Z.\n- Bottom face lies on z=0 and the part is entirely in z>=0.\n- Through-bores run parallel to +Z over full length:\n  - one center bore: diameter 5.0 mm at (x, y) = (0, 0)\n  - four bores: diameter 3.0 mm at (±7.0, 0) and (0, ±7.0)"
+  },
+  {
+    "id": "plate_80x40x8_slot_4_hole",
+    "order": 6,
+    "difficulty": "medium",
+    "prompt": "Create a slotted mounting plate.\n\nRequirements:\n- Plate size: 80.0 mm (X) x 40.0 mm (Y) x 8.0 mm (Z).\n- Bottom face on z=0 and entire part in z>=0.\n- Centered at (0, 0) in XY.\n- One centered through slot: 40.0 mm long (X direction), 10.0 mm wide (Y), through all thickness.\n- Four through-holes (diameter 6.0 mm) at XY:\n  - (+30, +15), (+30, -15), (-30, +15), (-30, -15)."
+  },
+  {
+    "id": "hex_nut_af17_h8_bore10",
+    "order": 7,
+    "difficulty": "medium",
+    "prompt": "Create a hex nut blank.\n\nRequirements:\n- Outer profile is a regular hexagon prism.\n- Across-flats size is 17.0 mm.\n- Thickness is 8.0 mm along +Z.\n- One centered through-bore diameter 10.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Axis of bore is global Z."
+  },
+  {
+    "id": "flange_40_24_h20_bolt4",
+    "order": 8,
+    "difficulty": "hard",
+    "prompt": "Create a two-step flange spacer.\n\nRequirements:\n- Axis is global Z.\n- Part sits in z>=0 with base on z=0.\n- Base disk: diameter 40.0 mm, thickness 8.0 mm.\n- Top boss: diameter 24.0 mm, height 12.0 mm (on top of base).\n- Total height: 20.0 mm.\n- One center through-bore: diameter 12.0 mm through full height.\n- Four through bolt holes: diameter 5.0 mm on 30.0 mm bolt circle\n  at angles 0, 90, 180, 270 degrees."
+  },
+  {
+    "id": "ring_50_30_h12_6_bolt4_pcd40",
+    "order": 9,
+    "difficulty": "hard",
+    "prompt": "Create a bolted ring.\n\nRequirements:\n- Axis is global Z.\n- Outer diameter: 50.0 mm.\n- Inner through-bore diameter: 30.0 mm.\n- Height: 12.0 mm.\n- Bottom face on z=0 and entire part in z>=0.\n- Add six through bolt holes: diameter 4.0 mm on a 40.0 mm bolt circle\n  at angles 0, 60, 120, 180, 240, 300 degrees."
+  },
+  {
+    "id": "step_block_60_40_30_4_hole",
+    "order": 10,
+    "difficulty": "hard",
+    "prompt": "Create a three-level stepped block.\n\nRequirements:\n- Centered at (0, 0) in XY with bottom on z=0 and all geometry in z>=0.\n- Base level: 60.0 x 40.0 x 10.0 mm (X,Y,Z).\n- Middle level on top of base: 40.0 x 30.0 x 10.0 mm.\n- Top level on top of middle: 20.0 x 20.0 x 10.0 mm.\n- Total height: 30.0 mm.\n- Four through-holes (diameter 6.0 mm) along +Z at:\n  - (+15, +10), (+15, -10), (-15, +10), (-15, -10)."
+  },
+  {
+    "id": "plate_100x60x12_slot_8_hole",
+    "order": 11,
+    "difficulty": "hard",
+    "prompt": "Create a heavily-featured mounting plate.\n\nRequirements:\n- Plate size: 100.0 mm (X) x 60.0 mm (Y) x 12.0 mm (Z).\n- Centered at (0, 0) in XY.\n- Bottom face on z=0 and entire part in z>=0.\n- One centered through-slot: 50.0 mm long (X direction), 12.0 mm wide (Y), through all thickness.\n- Eight through-holes (diameter 6.0 mm) at:\n  - (±40, ±20) and (±20, ±20)."
+  },
+  {
+    "id": "spur_gear_m1_z16_t6_bore5",
+    "order": 12,
+    "difficulty": "hard",
+    "prompt": "Create a spur gear.\n\nRequirements:\n- 16 teeth.\n- Module 1.0 mm (target outer diameter 18.0 mm).\n- Gear thickness 6.0 mm.\n- Central through-bore diameter 5.0 mm.\n- Axis is global Z.\n- Top face lies on z=0 and the entire gear is in z<=0."
+  },
+  {
+    "id": "m3x6_socket_head_zminus",
+    "order": 13,
+    "difficulty": "hard",
+    "prompt": "Create one ISO M3x6 hex socket head cap screw.\n\nRequirements:\n- Axis is global Z.\n- Top of head is on z=0; no geometry above z=0.\n- Under-head length: 6.0 mm.\n- Head: 5.5 mm diameter, 3.0 mm height.\n- External right-hand thread, 0.5 mm pitch.\n- Centered hex socket, 2.5 mm across flats, 1.5 mm deep."
+  },
+  {
+    "id": "gearbox_functional_collision_trim",
+    "order": 14,
+    "difficulty": "insane",
+    "prompt": "Create a transmission part set between two pre-existing axles.\n\nRig (already present; do not model):\n- Input axle center at (0, 0), output axle center at (40, 0), both along +Z\n- Axles are D-shafts: nominal diameter 4 mm with flat at x = center_x + 1.5 mm, axle z-range [0, 10]\n- Input speed +120 rpm\n\nYour part requirements:\n- Produce only transmission geometry in z in [0, 10]\n- Target output speed -60 rpm (within +/-10%)\n- A direct gear train is expected between the two given axles\n- Evaluation uses a rigid-body physical simulation with the fixed D-shafts above\n- The geometry must fit those shafts at those exact locations and transfer motion physically\n\nScoring points:\n- direction correctness under physical simulation\n- speed/ratio accuracy under physical simulation\n- axle fit and preserved placement"
+  },
+  {
+    "id": "custom_threaded_pair_nonstandard",
+    "order": 15,
+    "difficulty": "insane",
+    "prompt": "Create a custom nonstandard threaded bolt-and-nut pair.\n\nRequired layout:\n- Create both parts as one compound.\n- Bolt axis is +Z, centered at (-14, 0).\n- Nut axis is +Z, centered at (+14, 0).\n- Both parts must stay within z in [0, 18].\n\nCustom thread specification:\n- Nonstandard right-handed, 2-start thread\n- Nominal major diameter: 7.30 mm\n- Approximate root diameter: 6.00 mm\n- Pitch: 1.35 mm\n- Lead: 2.70 mm\n- Threaded engagement length: about 7.2 mm\n- Use an asymmetric / buttress-like thread profile, not a symmetric ISO triangle\n\nBolt requirements:\n- Threaded shaft centered at (-14, 0)\n- Cylindrical head above the threaded section\n\nNut requirements:\n- Matching internal thread centered at (+14, 0)\n- Outer diameter about 13 mm and thickness about 8 mm\n\nScoring points:\n- correct placement and sizes\n- clear helical thread signal on both bolt and nut\n- matching custom pitch / lead characteristics\n- matching mating diameters and clearances"
+  },
+  {
+    "id": "compound_gearbox_functional",
+    "order": 16,
+    "difficulty": "insane",
+    "prompt": "Create a three-shaft idler gearbox on three pre-existing D-shafts.\n\nRig (already present; do not model):\n- Input shaft center at (0, 0), idler shaft center at (20, 0), output shaft center at (50, 0)\n- All shafts are along +Z\n- All shafts are D-shafts: nominal diameter 4 mm with flat at x = center_x + 1.5 mm\n- Shaft z-range is [0, 10]\n- Input speed +120 rpm\n\nYour part requirements:\n- Include only transmission geometry in z in [0, 10]\n- Use three rigid bodies:\n  - one input gear body on the input shaft\n  - one idler gear body on the middle shaft\n  - one output gear body on the output shaft\n- A direct three-gear train is expected\n- Target output speed is about +55 rpm\n- Evaluation uses simultaneous rigid-body physical simulation on your authored\n  mesh geometry directly, on the fixed D-shafts above, at the stated +120 rpm input speed\n\nScoring points:\n- correct physical transfer ratio and direction under simulation\n- preserved authored placement on all three shafts\n- correct three-body gear-train structure"
+  },
+  {
+    "id": "compound_right_angle_gearbox_reverse",
+    "order": 17,
+    "difficulty": "insane",
+    "prompt": "Create a compound right-angle gearbox that reverses output direction.\n\nHidden evaluation mounts the model onto three fixed perpendicular shafts and runs a rigid-body physical simulation.\nModel only the gears, not the shafts or housing.\n\nShaft layout:\n- Input shaft: global Z axis through (x, y) = (12, 0)\n- Compound shaft: global X axis through (y, z) = (0, 18)\n- Output shaft: global Y axis through (x, z) = (40, 18)\n\nGear requirements:\n- Four separate gears total:\n  - one gear on the input shaft\n  - two gears on the compound shaft\n  - one gear on the output shaft\n- Keep the whole model inside:\n  - x in [4, 48]\n  - y in [-11, 11]\n  - z in [7, 29]\n- Approximate outer diameters:\n  - input bevel gear: 15 mm\n  - compound stage-1 bevel gear: 21 mm\n  - compound stage-2 bevel gear: 11 mm\n  - output bevel gear: 15 mm\n- Use a normal bevel-gear style layout with matched pitch-cone geometry for both right-angle stages\n- The compound shaft should carry two distinct gears centered near x=17 and x=35\n- Make the first right-angle stage visibly larger than the second stage\n- The authored gear bodies must be disjoint at rest: zero body-body intersections\n- Under the physical simulation, the design should produce a visible reduction with output speed around -15 rpm from a +30 rpm input\n- The intended arrangement is a two-stage right-angle transfer with reversed output direction\n\nScoring points:\n- correct shaft assignment and 4-gear compound structure\n- right-angle layout on the expected axes and shaft centers\n- stage sizes and placement consistent with a stable visible reduction\n- zero intersecting solids in the authored initial state\n- physical transfer under Blender rigid-body simulation\n- output-stage arrangement consistent with the reversed-direction design intent"
+  }
+]

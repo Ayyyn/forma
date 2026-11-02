@@ -20,6 +20,7 @@ def identity(document, instruction, selection, settings, asset_loader):
         for name in [
             "workspace_agent.py",
             "workspace_geometry.py",
+            "mechanical_features.py",
             "workspace_cache.py",
             "workspace_requirements.py",
             "workspace_workflow.py",
@@ -29,6 +30,8 @@ def identity(document, instruction, selection, settings, asset_loader):
     }
     versions["cadquery"] = version("cadquery")
     versions["cadquery-ocp"] = version("cadquery-ocp")
+    for package in ("cq-gears", "cq-warehouse"):
+        versions[package] = version(package)
     encoded = json.dumps(
         {
             "document": document,
