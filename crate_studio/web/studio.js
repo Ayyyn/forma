@@ -366,6 +366,7 @@ function useSnapshot(value) {
     state.feature = null;
   state.selection = [];
   renderAll();
+  $("#selection-message").textContent = state.document.features.find(f => f.id === state.feature)?.name || "Nothing selected";
   renderConfigurations();
   if (s.id) updateDocumentUrl();
   if (state.measure) renderMeasurement();
@@ -462,6 +463,11 @@ function renderInspector() {
   }
 
   const def = { ...(definitions[f.type] || { label: f.type, fields: [] }) };
+  def.fields = [...def.fields];
+  if (["box", "cylinder", "sketch_extrude", "cut_hole"].includes(f.type))
+    def.fields.push(["target_part_id", "Target body (blank = all)", "optional-text"]);
+  if (["union", "boolean_union"].includes(f.type))
+    def.fields.push(["part_ids", "Bodies to join (blank = all)", "body-list"]);
   // Legacy holes are fixed-depth. Editing their radius must not change intent.
   if (f.type === "cut_hole" && !f.params.end_condition)
     def.params = { ...def.params, end_condition: "blind" };
@@ -554,6 +560,8 @@ function fieldHTML([key, label, type, options], params) {
     return `<label class="field-label">${label}<select aria-label="${esc(label)}" data-param="${key}" data-type="text">${options.map((o) => `<option value="${o}" ${value === o ? "selected" : ""}>${o[0].toUpperCase() + o.slice(1).replaceAll("_", " ")}</option>`).join("")}</select></label>`;
   if (type === "points")
     return `<label class="field-label">${label}<textarea data-param="${key}" data-type="points" placeholder="0,0; 50,0; 25,40">${esc((value || []).map((p) => p.join(", ")).join("; "))}</textarea></label><p class="parameter-note">XY points separated by semicolons. The outline closes automatically.</p>`;
+  if (type === "body-list")
+    return `<label class="field-label">${label}<input data-param="${key}" data-type="body-list" value="${esc((value || []).join(", "))}" placeholder="body_001, body_003"></label>`;
   return `<label class="field-label">${label}${unit ? `<span class="input-unit">${unit}</span>` : ""}<input data-param="${key}" data-type="${optional ? "optional-number" : type}" type="${type === "number" ? "number" : "text"}" ${type === "readonly" ? "readonly" : ""} value="${esc(value ?? (type === "number" && !optional ? 0 : ""))}" ${type === "number" ? `step="any" ${optional ? '' : 'required'}` : ""}></label>`;
 }
 
@@ -564,6 +572,7 @@ function readFeatureForm(f) {
     const type = el.dataset.type;
     if (type === "readonly") return;
     if (type === "optional-number" && el.value === "") { delete f.params[el.dataset.param]; return; }
+    if (["optional-text", "body-list"].includes(type) && !el.value.trim()) { delete f.params[el.dataset.param]; return; }
     f.params[el.dataset.param] =
       type === "boolean"
         ? el.checked
@@ -574,7 +583,9 @@ function readFeatureForm(f) {
                 .split(";")
                 .filter((x) => x.trim())
                 .map((p) => p.split(",").map(Number))
-            : el.value;
+            : type === "body-list"
+              ? el.value.split(",").map(value => value.trim()).filter(Boolean)
+              : el.value;
   });
   $$("[data-vector]").forEach((el) => {
     f.params[el.dataset.vector] ||= [0, 0, 0];
@@ -1808,9 +1819,10 @@ $("#check-interference").addEventListener("click", async () => {
     button.disabled = false;
   }
 });
-async function sendAgent(regenerate = false) {
+async function sendAgent(regenerate = false, resumeFrom = null) {
   const prompt = $("#agent-prompt").value.trim();
   if (!prompt || state.agentBusy || state.busy) return;
+  state.agentInstruction = prompt;
   if (state.pending || state.inspectorDirty || state.agentPreview) {
     toast(
       "Save or discard your current edits before requesting a proposal.",
@@ -1839,6 +1851,8 @@ async function sendAgent(regenerate = false) {
           .slice(-2),
         selected_feature_id: state.feature || null,
         regenerate: regenerate === true,
+        agent_mode: $("#agent-mode").value,
+        resume_from: resumeFrom,
       },
       30000,
     );
@@ -1968,13 +1982,32 @@ function renderAgent(job) {
       ? "Review proposal"
       : p.status === "clarify"
         ? "Clarification needed"
-        : "Geometry not valid";
+        : p.status === "incomplete"
+          ? "Design incomplete"
+          : "Geometry not valid";
   const b = state.agentBase.metrics || {},
     a = p.snapshot?.metrics || {};
   $("#agent-result").innerHTML =
     `<strong>${esc(p.summary || "Design proposal")}</strong>${p.status === "ready" ? `<div class="agent-comparison"><span>Volume</span><span>${fmt(b.volume_mm3)} → ${fmt(a.volume_mm3)} mm³</span><span>Solids</span><span>${b.solid_count || 0} → ${a.solid_count || 0}</span></div>` : ""}${p.questions?.length ? `<ul>${p.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : ""}${p.changes?.length ? `<details><summary>${p.changes.length} change${p.changes.length === 1 ? "" : "s"}</summary><ul>${p.changes.map((c) => `<li>${esc(describeChange(c))}</li>`).join("")}</ul></details>` : ""}${p.snapshot?.checks ? `<details><summary>Geometry verification</summary>${p.snapshot.checks.map((c) => `<p>${c.status === "pass" ? "✓" : c.status === "fail" ? "×" : "i"} ${esc(c.label)}${c.detail ? " — " + esc(c.detail) : ""}</p>`).join("")}</details>` : ""}<div class="agent-actions">${p.status === "ready" ? '<button id="agent-preview">Preview design</button><button id="agent-apply" class="primary">Apply revision</button>' : ""}<button id="agent-regenerate" title="Request a fresh model response">New proposal</button><button id="agent-dismiss">Dismiss</button><small>${p.cache?.hit ? "Reused verified proposal · " : ""}${esc(p.model || state.model?.name || "Meta")}${p.estimated_cost_usd != null ? " · ~$" + Number(p.estimated_cost_usd).toFixed(4) + " estimated" : ""}</small></div>`;
   $("#agent-provenance").textContent =
     `${p.model || "Meta"} · ${p.status === "ready" ? "Awaiting review" : "No changes applied"}`;
+  if (p.design_review) {
+    const review = document.createElement("details");
+    review.innerHTML = `<summary>Design review · geometry proposal</summary><p>${esc(p.design_review.visual_review || "")}</p>${["alternatives", "assumptions", "unresolved"].map((key) => p.design_review[key]?.length ? `<strong>${esc(key[0].toUpperCase() + key.slice(1))}</strong><ul>${p.design_review[key].map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : "").join("")}<p>Physical fit, holding and load capacity remain unverified.</p>`;
+    $("#agent-result").insertBefore(review, $("#agent-result .agent-actions"));
+  }
+  if (p.status === "incomplete" && p.has_checkpoint) {
+    const resume = document.createElement("button");
+    resume.textContent = "Continue design";
+    resume.addEventListener("click", () => {
+      if (!agentStillCurrent() || $("#agent-prompt").value.trim() !== state.agentInstruction) {
+        toast("The source or brief changed. Request a new proposal.", true);
+        return;
+      }
+      sendAgent(false, p.run_id);
+    });
+    $("#agent-result .agent-actions").prepend(resume);
+  }
   $("#agent-preview")?.addEventListener("click", () => {
     if (!agentStillCurrent()) {
       toast(

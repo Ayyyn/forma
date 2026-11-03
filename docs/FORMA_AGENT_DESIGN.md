@@ -4,7 +4,7 @@ This is a development contract, not a claim that the target architecture is impl
 
 ## Existing pipeline and target
 
-The current Studio path uses one `muse-wonder-1.0` planner conversation, supported declarative feature operations, deterministic regeneration/validation and at most one feedback repair. Exact proposal cache hits revalidate without a new model call. There is no cooperating multi-agent mechanism-design system or arbitrary mechanism solver today. See `crate_studio/workspace_agent.py`.
+Quick edit uses one `muse-wonder-1.0` planner conversation, supported declarative feature operations, deterministic regeneration/validation and at most one feedback repair. Exact proposal cache hits revalidate without a new model call. The opt-in [Design with tools mode](FORMA_DESIGN_TOOLS.md) adds a bounded, single-conversation tool loop with candidate branches, native inspection, actual CAD images, sampled rigid-body mechanisms and checked exports. There is no cooperating multi-agent mechanism-design system or arbitrary mechanism solver today. See `crate_studio/workspace_agent.py` and `crate_studio/design_agent.py`.
 
 Extend that path toward requirements → alternative mechanisms → editable assembly → tool verification → targeted revision → visual review → export qualification. These stages need not be separate model agents. Compare role separation against a single-agent control before promoting it.
 
@@ -28,7 +28,7 @@ Expose applicable tools through explicit typed calls with inputs, units, revisio
 | Manufacturing and interoperability | Export, reopen and compare files; prepare layouts, fit coupons and supported slicer checks |
 | Reference and computation | Consult relevant primary references and use supported numerical/search tools; retain provenance and distinguish references from proof |
 
-This table is a target coverage map, not an implemented tool registry. Existing geometry helpers do not become model-callable simply because they exist. Broad tool access must operate within the current project authorization, application budget and revision safeguards; no blanket authority for unrelated data or external actions is implied.
+This table is a target coverage map. The implemented registry and its actual boundaries are in `crate_studio/design_tools.py`; reference browsing, force/fatigue and general sketch constraints remain unavailable. Existing geometry helpers do not become model-callable simply because they exist. Broad tool access must operate within the current project authorization, application budget and revision safeguards; no blanket authority for unrelated data or external actions is implied.
 
 ## Verification and speed
 

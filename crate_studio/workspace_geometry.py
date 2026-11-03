@@ -184,6 +184,19 @@ def _apply(kind, p, shapes, asset_loader):
             )
         )
         operation = p.get("operation", "add")
+        if "target_part_id" in p:
+            ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+            if p["target_part_id"] not in ids or operation not in ("add", "cut"):
+                raise ValueError(
+                    "Targeted primitive requires an existing body and operation add/cut"
+                )
+            index = ids.index(p["target_part_id"])
+            changed = (
+                _solids(_union([shapes[index], tool]))
+                if operation == "add"
+                else _subtract(shapes[index], tool)
+            )
+            return shapes[:index] + changed + shapes[index + 1 :]
         if operation == "add":
             return _solids(_union(shapes + [tool]))
         if operation == "cut":
@@ -208,7 +221,11 @@ def _apply(kind, p, shapes, asset_loader):
         end_condition = p.get("end_condition", "blind")
         if end_condition not in ("blind", "through_all"):
             raise ValueError("Hole end_condition must be blind or through_all")
-        body = _union(shapes)
+        target = p.get("target_part_id")
+        ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+        if target is not None and target not in ids:
+            raise ValueError("target_part_id must identify an existing body")
+        body = shapes[ids.index(target)] if target is not None else _union(shapes)
         if end_condition == "through_all":
             lo, hi = _bounds(body)
             start, depth = lo[2] - 1, hi[2] - lo[2] + 2
@@ -222,7 +239,12 @@ def _apply(kind, p, shapes, asset_loader):
             .translate((_number(p, "x", 0), _number(p, "y", 0), start))
             .val()
         )
-        return _subtract(body, tool)
+        changed = _subtract(body, tool)
+        return (
+            shapes[: ids.index(target)] + changed + shapes[ids.index(target) + 1 :]
+            if target is not None
+            else changed
+        )
     if kind == "face_offset":
         ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
         part_id = p.get("part_id")
@@ -404,6 +426,29 @@ def _apply(kind, p, shapes, asset_loader):
             result = shapes + result
         return result
     if kind in ("union", "boolean_union"):
+        if "part_ids" in p:
+            ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+            selected = p["part_ids"]
+            if (
+                not isinstance(selected, list)
+                or len(selected) < 2
+                or any(not isinstance(x, str) or x not in ids for x in selected)
+                or len(set(selected)) != len(selected)
+            ):
+                raise ValueError(
+                    "part_ids must select at least two different existing bodies"
+                )
+            indices = sorted(ids.index(x) for x in selected)
+            combined = _solids(_union([shapes[i] for i in indices]))
+            return (
+                [s for i, s in enumerate(shapes) if i < indices[0]]
+                + combined
+                + [
+                    s
+                    for i, s in enumerate(shapes)
+                    if i > indices[0] and i not in indices
+                ]
+            )
         return _solids(_union(shapes))
     if kind in ("cut", "boolean_cut"):
         target = p.get("target", 0)

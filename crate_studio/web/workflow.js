@@ -3,6 +3,7 @@ import { OrbitControls } from "/assets/vendor/OrbitControls.js";
 
 const $ = (s) => document.querySelector(s);
 const copy = (x) => JSON.parse(JSON.stringify(x));
+const motionSignature = (value) => JSON.stringify([value.geometry_signature, value.document.metadata?.design_mechanism || null]);
 const escape = (x) =>
   String(x ?? "").replace(
     /[&<>"']/g,
@@ -293,8 +294,8 @@ export function createWorkflow(bridge) {
       if (playing && study) {
         const dt = Math.min((time - lastTime) / 1000, 0.05);
         angle += travel * dt * 22;
-        if (angle >= study.config.max_angle_deg) {
-          angle = study.config.max_angle_deg;
+        if (angle >= (study.config.progress_max ?? study.config.max_angle_deg)) {
+          angle = study.config.progress_max ?? study.config.max_angle_deg;
           travel = -1;
         }
         if (angle <= 0) {
@@ -363,12 +364,12 @@ export function createWorkflow(bridge) {
     clearGroup();
     study = value;
     group = new THREE.Group();
-    if (value.family === "panel_hinges") {
+    if (value.family === "panel_hinges" || value.family === "general_mechanism") {
       value.parts.forEach((p,i) => {
         const geometry=new THREE.BufferGeometry();
         geometry.setAttribute("position",new THREE.Float32BufferAttribute(p.vertices,3));
         geometry.setIndex(p.triangles); geometry.computeVertexNormals();
-        const color=p.kind==="pin" ? 0xa87a3e : [0xb7c9d1,0x91adb7,0xc8b89d][p.face%3];
+        const color=p.kind==="pin" ? 0xa87a3e : [0xb7c9d1,0x91adb7,0xc8b89d][(p.face ?? i)%3];
         const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color,roughness:.65}));
         mesh.userData={part:p,baseColor:color};mesh.matrixAutoUpdate=false;
         mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:0x46565d,transparent:true,opacity:.45})));
@@ -400,12 +401,12 @@ export function createWorkflow(bridge) {
       group.add(pivot);
     });
     scene.add(group);
-    $("#motion-angle").max = value.config.max_angle_deg;
-    $("#motion-angle").step = value.family==="panel_hinges" ? value.config.max_angle_deg/(value.frames.length-1) : .1;
+    $("#motion-angle").max = value.config.progress_max ?? value.config.max_angle_deg;
+    $("#motion-angle").step = value.family==="general_mechanism" ? 100/(value.frames.length-1) : value.family==="panel_hinges" ? value.config.max_angle_deg/(value.frames.length-1) : .1;
     $("#motion-angle").disabled = false;
     $("#motion-play").disabled = false;
-    $("#motion-save").disabled = false;
-    $("#motion-state").textContent = value.family === "panel_hinges"
+    $("#motion-save").disabled = value.family === "general_mechanism";
+    $("#motion-state").textContent = value.family === "panel_hinges" || value.family === "general_mechanism"
       ? `${value.frames.length} sampled poses · ${value.passed ? "Geometry checks passed" : "Geometry issues detected"}`
       : `${value.frames.length} sampled poses · ${value.sampled_overlap_free ? "No panel overlap detected" : "Overlap detected in " + value.collision_sample_count + " poses"}`;
     $("#motion-scope").textContent = value.scope;
@@ -420,6 +421,19 @@ export function createWorkflow(bridge) {
     $("#motion-angle").value = angle;
     $("#motion-angle-label").textContent = num(angle) + "°";
     if (!study || !group) return;
+    if (study.family === "general_mechanism") {
+      const frame = study.frames.reduce((a,b) => Math.abs(b.progress_pct-angle) < Math.abs(a.progress_pct-angle) ? b : a);
+      $("#motion-angle").value = frame.progress_pct;
+      $("#motion-angle-label").textContent = num(frame.progress_pct) + "%";
+      const hits = frame.overlaps.flatMap(pair => pair.parts);
+      group.children.forEach(mesh => {
+        mesh.matrix.set(...frame.pose_matrices[mesh.userData.part.id].flat());
+        mesh.matrixWorldNeedsUpdate = true;
+        mesh.material.color.set(hits.includes(mesh.userData.part.id) ? 0xc06450 : mesh.userData.baseColor);
+      });
+      $("#motion-metrics").textContent = `Path ${num(frame.progress_pct)}% · ${frame.extent_mm.map(v=>num(v)).join(" × ")} mm · ${frame.overlaps.length ? "Solid interference" : "No sampled native solid overlap"} · loop error ${frame.loop_position_error_mm.toExponential(1)} mm · hardware and locks unverified`;
+      return;
+    }
     if (study.family==="panel_hinges") {
       const frame=study.frames.reduce((a,b)=>Math.abs(b.angle_deg-angle)<Math.abs(a.angle_deg-angle)?b:a);
       $("#motion-angle").value=frame.angle_deg;
@@ -459,17 +473,17 @@ export function createWorkflow(bridge) {
     $("#motion-chart").innerHTML = colors
       .map(
         (color, axis) =>
-          `<polyline fill="none" stroke="${color}" stroke-width="2" points="${study.frames.map((f) => `${20 + (f.angle_deg / study.config.max_angle_deg) * 560},${82 - (f.extent_mm[axis] / max) * 65}`).join(" ")}"/><text x="${20 + axis * 180}" y="103" fill="${color}" font-size="10">${["X width", "Y depth", "Z height"][axis]} · max ${num(Math.max(...study.frames.map((f) => f.extent_mm[axis])))} mm</text>`,
+          `<polyline fill="none" stroke="${color}" stroke-width="2" points="${study.frames.map((f) => `${20 + ((f.progress_pct ?? f.angle_deg) / (study.config.progress_max ?? study.config.max_angle_deg)) * 560},${82 - (f.extent_mm[axis] / max) * 65}`).join(" ")}"/><text x="${20 + axis * 180}" y="103" fill="${color}" font-size="10">${["X width", "Y depth", "Z height"][axis]} · max ${num(Math.max(...study.frames.map((f) => f.extent_mm[axis])))} mm</text>`,
       )
       .join("");
   }
   $("#motion-run").onclick = () =>
     runTask(async () => {
       const base = context();
-      $("#motion-state").textContent = "Checking native folding geometry…";
+      $("#motion-state").textContent = "Checking native mechanism geometry…";
       const value = await bridge.api("/motion", {
         document: bridge.getState().document,
-        config: {
+        config: snapshot.document.metadata?.design_mechanism ? {family: "general_mechanism", samples_per_segment: Number($("#motion-samples").value)} : {
           family: snapshot.folding ? "panel_hinges" : "enclosure_walls",
           max_angle_deg: Number($("#motion-max").value),
           samples: Number($("#motion-samples").value),
@@ -477,7 +491,7 @@ export function createWorkflow(bridge) {
       }, Number($("#motion-samples").value)>73 ? 600000 : 180000);
       if (base !== context())
         throw new Error("Geometry changed during simulation. Run again.");
-      studyKey = value.geometry_signature;
+      studyKey = motionSignature(snapshot);
       displayStudy(value);
     });
   [$("#motion-max"), $("#motion-samples")].forEach((input) =>
@@ -516,7 +530,7 @@ export function createWorkflow(bridge) {
     runTask(async () => {
       if (
         !study ||
-        studyKey !== snapshot.geometry_signature ||
+        studyKey !== motionSignature(snapshot) ||
         !motionSettingsMatch()
       )
         throw new Error("Run the study again for this geometry.");
@@ -579,10 +593,10 @@ export function createWorkflow(bridge) {
         action: "Open model",
       },
       {
-        title: snapshot.folding ? "Folding motion" : "Wall motion",
+        title: meta.design_mechanism ? "Mechanism motion" : snapshot.folding ? "Folding motion" : "Wall motion",
         tag: "05 · SIMULATION",
         tab: "motion",
-        content: `<span class="canvas-badge">${study && studyKey === snapshot.geometry_signature ? "Current session study" : "Run study"}</span><p>${study && studyKey === snapshot.geometry_signature ? `${study.frames.length} sampled poses<br>${study.sampled_overlap_free ? "No sampled panel overlap" : "Overlap detected"}` : snapshot.folding ? "Rigid panels, real hinge barrels and removable pins." : "Finite-thickness enclosure walls with explicit virtual hinges."}</p><p>Loads and physical fit require separate validation.</p>`,
+        content: `<span class="canvas-badge">${study && studyKey === motionSignature(snapshot) ? "Current session study" : "Run study"}</span><p>${study && studyKey === motionSignature(snapshot) ? `${study.frames.length} sampled poses<br>${study.sampled_overlap_free ? "No sampled solid overlap" : "Overlap detected"}` : meta.design_mechanism ? "Native solids with declared sliding or rotating joints." : snapshot.folding ? "Rigid panels, real hinge barrels and removable pins." : "Finite-thickness enclosure walls with explicit virtual hinges."}</p><p>Loads and physical fit require separate validation.</p>`,
         action: "Open simulation",
       },
       {
@@ -718,7 +732,11 @@ export function createWorkflow(bridge) {
   return {
     update(value) {
       snapshot = value;
-      $("#motion-tab h1").textContent=value.folding ? value.folding.family.replaceAll("_"," ").replace(/^./,c=>c.toUpperCase())+" folding" : "Wall folding";
+      const general = value.document.metadata?.design_mechanism;
+      $("#motion-tab h1").textContent=general ? "Mechanism motion" : value.folding ? value.folding.family.replaceAll("_"," ").replace(/^./,c=>c.toUpperCase())+" folding" : "Wall folding";
+      $("#motion-max").disabled = !!general;
+      $("#motion-max").parentElement.classList.toggle("hidden", !!general);
+      $("#motion-save").classList.toggle("hidden", !!general);
       const samplesControl=$("#motion-samples");
       for (const count of [181,361,721]) {
         let option=Array.from(samplesControl.options).find(o=>o.value===String(count));
@@ -728,13 +746,22 @@ export function createWorkflow(bridge) {
       if (!value.folding && Number(samplesControl.value)>73) samplesControl.value=37;
       $("#motion-chart").setAttribute("aria-label","Outside envelope through sampled motion");
       if (!study) $("#motion-metrics").textContent="Simulation is bound to the current CAD revision.";
-      $("#motion-angle").parentElement.firstChild.textContent=value.folding ? "Driver angle " : "Wall angle ";
+      $("#motion-angle").parentElement.firstChild.textContent=general ? "Path progress " : value.folding ? "Driver angle " : "Wall angle ";
+      if (!study && general) {
+        $("#motion-angle-label").textContent = "0%";
+        const count = String(general.samples_per_segment);
+        if (!Array.from(samplesControl.options).some(o => o.value === count)) {
+          const option = document.createElement("option"); option.value = count; option.textContent = count; samplesControl.append(option);
+        }
+        samplesControl.value = count;
+        $("#motion-max").value = 90;
+      }
       $("#motion-max").max=value.folding?.absolute_limit_deg || 90;
       if (!study && !value.document.metadata?.motion && value.folding) {
         $("#motion-max").value=value.folding.default_limit_deg;
         $("#motion-samples").value=73;
       }
-      if (!study && value.document.metadata?.motion) {
+      if (!study && !general && value.document.metadata?.motion) {
         $("#motion-max").value = value.document.metadata.motion.max_angle_deg;
         $("#motion-samples").value = value.document.metadata.motion.samples;
       }
@@ -751,7 +778,7 @@ export function createWorkflow(bridge) {
       }
       const binding = value.requirements_state?.status || "unbound";
       if (!study) {
-        $("#motion-state").textContent = value.folding ? "Ready to check real panels, pins and hinge alignment." :
+        $("#motion-state").textContent = general ? "Ready to check declared motion on native solids. Hardware and locks need separate verification." : value.folding ? "Ready to check real panels, pins and hinge alignment." :
           binding === "current"
             ? value.document.metadata.source_spec.lid
               ? "Remove the top panel in Project before running wall motion."
@@ -771,7 +798,7 @@ export function createWorkflow(bridge) {
         "hidden",
         binding === "current" || !value.document.features.length,
       );
-      if (studyKey && studyKey !== value.geometry_signature) {
+      if (studyKey && studyKey !== motionSignature(value)) {
         study = null;
         playing = false;
         clearGroup();

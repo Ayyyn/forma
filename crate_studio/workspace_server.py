@@ -22,6 +22,7 @@ from pathlib import Path
 import re
 import threading
 import uuid
+from typing import Literal
 import zipfile
 
 from fastapi import APIRouter, HTTPException
@@ -337,6 +338,19 @@ def snapshot(document, cad_lock):
         },
     ]
     requirements = requirement_state(doc)
+    design_review = {"status": "unbound"}
+    if doc.get("metadata", {}).get("design_review"):
+        from .design_tools import review_state
+
+        design_review = review_state(doc, asset_path)
+        checks.append(
+            {
+                "id": "design_review",
+                "label": "Design tool review · " + design_review["status"],
+                "status": "info" if design_review["status"] == "current" else "stale",
+                "detail": design_review["detail"],
+            }
+        )
     if "folding" in result["checks"]:
         folded = result["checks"]["folding"]
         checks.append(
@@ -390,6 +404,7 @@ def snapshot(document, cad_lock):
         "document": doc,
         "folding": folding_info,
         "requirements_state": requirements,
+        "design_review_state": design_review,
         "geometry_signature": geometry_signature(doc),
         "geometry": {
             "parts": meshes,
@@ -559,6 +574,8 @@ class PromptBody(BaseModel):
     selection: list[str] = Field(default_factory=list, max_length=2)
     selected_feature_id: str | None = None
     regenerate: bool = False
+    agent_mode: Literal["standard", "tools"] = "standard"
+    resume_from: str | None = Field(default=None, max_length=80)
 
 
 def create_router(cad_lock, crate_reader=None):
@@ -596,7 +613,10 @@ def create_router(cad_lock, crate_reader=None):
 
     @router.post("/motion")
     def simulate_motion(body: MotionBody):
-        return motion_study(normalize_document(body.document), body.config)
+        with cad_lock:
+            return motion_study(
+                normalize_document(body.document), body.config, asset_path
+            )
 
     @router.get("/documents")
     def documents():
@@ -900,7 +920,11 @@ def create_router(cad_lock, crate_reader=None):
     @router.post("/agent", status_code=202)
     def start_agent(body: PromptBody):
         from .workspace_agent import propose_document
+        from .design_agent import propose_design
         from .agent import configured
+
+        if body.resume_from is not None and body.agent_mode != "tools":
+            raise ValueError("Only a tool-driven design can resume a checkpoint")
 
         if not configured():
             raise HTTPException(503, "Meta API is not configured")
@@ -922,6 +946,8 @@ def create_router(cad_lock, crate_reader=None):
                     "prompt": body.prompt,
                     "selection": body.selection,
                     "selected_feature_id": body.selected_feature_id,
+                    "agent_mode": body.agent_mode,
+                    "resume_from": body.resume_from,
                 },
                 sort_keys=True,
                 allow_nan=False,
@@ -944,6 +970,7 @@ def create_router(cad_lock, crate_reader=None):
                 "stage": "Queued",
                 "events": [],
                 "request_key": request_key,
+                "agent_mode": body.agent_mode,
             }
 
         def event(kind, message):
@@ -954,7 +981,10 @@ def create_router(cad_lock, crate_reader=None):
         def work():
             try:
                 JOBS[id]["status"] = "running"
-                p = propose_document(
+                planner = (
+                    propose_design if body.agent_mode == "tools" else propose_document
+                )
+                p = planner(
                     base["document"],
                     body.prompt,
                     asset_loader=asset_path,
@@ -966,6 +996,11 @@ def create_router(cad_lock, crate_reader=None):
                         "topology_ids": body.selection,
                     },
                     use_cache=not body.regenerate,
+                    **(
+                        {"resume_from": body.resume_from}
+                        if body.agent_mode == "tools"
+                        else {}
+                    ),
                 )
                 if p["status"] == "ready":
                     p["snapshot"] = snapshot(p["document"], cad_lock)
@@ -1063,17 +1098,23 @@ def create_router(cad_lock, crate_reader=None):
                     "revision_id": id,
                     "geometry_signature": value["geometry_signature"],
                     "requirements": value["requirements_state"],
+                    "design_review": value["design_review_state"],
                     "motion": {"status": "not_configured"},
                 }
                 if value["requirements_state"]["status"] == "current":
                     workflow["panel_pack"] = export_panel_pack(
                         value["document"], folder
                     )
-                if "motion" in value["document"]["metadata"]:
+                if any(
+                    key in value["document"]["metadata"]
+                    for key in ("motion", "design_mechanism")
+                ):
                     try:
                         workflow["motion"] = {
                             "status": "current",
-                            "study": motion_study(value["document"]),
+                            "study": motion_study(
+                                value["document"], asset_loader=asset_path
+                            ),
                         }
                     except ValueError as error:
                         workflow["motion"] = {"status": "stale", "detail": str(error)}

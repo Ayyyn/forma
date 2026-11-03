@@ -149,9 +149,36 @@ def wall_frame(definitions, angle_deg):
     }
 
 
-def motion_study(document, config=None):
+def motion_study(document, config=None, asset_loader=None):
     from .folding_study import folding_feature, folding_study
 
+    if document.get("metadata", {}).get("design_mechanism"):
+        from .mechanism_study import mechanism_study
+        from .workspace_cache import cached_build
+
+        spec = deepcopy(document["metadata"]["design_mechanism"])
+        if config:
+            if config.get("family") != "general_mechanism" or set(config) != {
+                "family",
+                "samples_per_segment",
+            }:
+                raise ValueError(
+                    "Generic mechanism settings require family and samples_per_segment"
+                )
+            spec["samples_per_segment"] = config["samples_per_segment"]
+        built = cached_build(document, asset_loader)
+        result = mechanism_study(document, built, spec)
+        result.update(
+            family="general_mechanism",
+            parts=deepcopy(built["mesh"]),
+            config={
+                "family": "general_mechanism",
+                "progress_max": 100,
+                "samples": spec["samples_per_segment"],
+            },
+            sampled_overlap_free=not result["collision_sample_count"],
+        )
+        return result
     if folding_feature(document) is not None:
         return folding_study(document, config)
     if requirement_state(document)["status"] != "current":
