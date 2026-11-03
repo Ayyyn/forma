@@ -5,6 +5,7 @@ The joints are kinematic declarations, not manufactured bearings or locks.
 """
 
 from copy import deepcopy
+import json
 import math
 
 import cadquery as cq
@@ -193,6 +194,25 @@ def mechanism_study(document, built, raw):
     if len(parts) > 24:
         raise ValueError("Generic mechanism study supports at most 24 native bodies")
     spec = validate_spec(raw, [p["id"] for p in parts])
+    from .workspace_cache import identity_for_build
+    from .motion_cache import native_motion_cache
+
+    identity = identity_for_build(built)
+    key = (
+        None
+        if identity is None
+        else (
+            identity,
+            geometry_signature(document),
+            json.dumps(spec, sort_keys=True, allow_nan=False),
+        )
+    )
+    return native_motion_cache.compute(
+        key, lambda: _calculate_study(document, parts, spec)
+    )
+
+
+def _calculate_study(document, parts, spec):
     frames = []
     for segment, (start, end) in enumerate(zip(spec["states"], spec["states"][1:])):
         for index, alpha in enumerate(np.linspace(0, 1, spec["samples_per_segment"])):

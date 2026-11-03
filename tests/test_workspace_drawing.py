@@ -21,6 +21,74 @@ from crate_studio.workspace_drawing import (
 
 
 class WorkspaceDrawingTests(unittest.TestCase):
+    def test_compact_parameter_appendix_preserves_every_value_and_long_rows(self):
+        from crate_studio.workspace_drawing import _parameter_scenes
+        from reportlab.pdfbase import pdfmetrics
+
+        features = [
+            {
+                "id": f"part_{i:02d}",
+                "type": "box",
+                "suppressed": False,
+                "params": {
+                    "width": i + 10.125,
+                    "depth": 20,
+                    "height": 2,
+                    "cx": i * 50,
+                    "cy": 0,
+                    "z": 0,
+                    "operation": "new_body",
+                },
+            }
+            for i in range(35)
+        ]
+        scenes = _parameter_scenes(
+            {"name": "Compact parameter control", "feature_parameters": features}
+        )
+        self.assertLessEqual(len(scenes), 7)
+        text = "\n".join(
+            item["text"] for scene in scenes for item in scene if item["type"] == "text"
+        )
+        for feature in features:
+            self.assertIn(feature["id"], text)
+            self.assertIn(json.dumps(feature["params"]["width"]), text)
+        for scene in scenes:
+            for item in scene:
+                if item["type"] == "text":
+                    self.assertLessEqual(
+                        item["x"]
+                        + pdfmetrics.stringWidth(
+                            item["text"], "FormaSans", item["size"]
+                        ),
+                        1160.01,
+                    )
+                    self.assertLessEqual(item["y"], 770)
+        points = [[i / 10, i] for i in range(300)]
+        long = _parameter_scenes(
+            {
+                "name": "Long structured source",
+                "feature_parameters": [
+                    {
+                        "id": "profile",
+                        "type": "sketch_extrude",
+                        "suppressed": False,
+                        "params": {"points": points},
+                    }
+                ],
+            }
+        )
+        values = [
+            item["text"]
+            for scene in long
+            for item in scene
+            if item["type"] == "text"
+            and item["size"] == 10.5
+            and item["x"] in (195, 775)
+        ]
+        self.assertEqual(
+            "".join(values), json.dumps(points, ensure_ascii=False, allow_nan=False)
+        )
+
     def document(self):
         return {
             "name": "Plate <review> & notes",

@@ -9,6 +9,18 @@ from crate_studio.workspace_geometry import build_document
 
 
 class ComponentExportTests(unittest.TestCase):
+    def test_open_mesh_reports_specific_boundary_coordinates(self):
+        import trimesh
+        from crate_studio.workspace_geometry import mesh_topology_diagnostics
+
+        mesh = trimesh.creation.box(extents=[10, 8, 2])
+        self.assertEqual(mesh_topology_diagnostics(mesh)["boundary_edge_count"], 0)
+        mesh.update_faces([False] + [True] * (len(mesh.faces) - 1))
+        report = mesh_topology_diagnostics(mesh)
+        self.assertEqual(report["boundary_edge_count"], 3)
+        self.assertEqual(len(report["sample_edges"]), 3)
+        self.assertIsNotNone(report["bounds_mm"])
+
     def test_touching_movable_bodies_stay_separate_and_bytes_repeat(self):
         built = build_document(
             {

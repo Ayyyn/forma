@@ -45,6 +45,7 @@ from .workspace_cache import (
     cached_build,
     cache_clear,
     cache_info,
+    asset_identity,
     VERSION as GEOMETRY_VERSION,
 )
 
@@ -80,6 +81,12 @@ EXPORT_VERSION = hashlib.sha256(
             "workspace_drawing.py",
             "workspace_server.py",
             "component_exports.py",
+            "design_tools.py",
+            "mechanism_study.py",
+            "motion_cache.py",
+            "motion_probe.py",
+            "native_study.py",
+            "floor_check.py",
             "workspace_requirements.py",
             "workspace_workflow.py",
             "folding_study.py",
@@ -273,6 +280,7 @@ def drawing_key(doc):
             "features": doc["features"],
             "name": doc["name"],
             "annotations": doc["annotations"],
+            "assets": asset_identity(doc, asset_path),
         },
         sort_keys=True,
         allow_nan=False,
@@ -290,6 +298,9 @@ built.cache_info = cache_info
 @lru_cache(maxsize=20)
 def projected(encoded):
     doc = json.loads(encoded)
+    # Asset content belongs to the cache identity, not the editable document
+    # schema passed to native regeneration.
+    doc.pop("assets", None)
     return drawing_svg(doc, built(build_key(doc))["parts"])
 
 
@@ -350,6 +361,22 @@ def snapshot(document, cad_lock):
         },
     ]
     requirements = requirement_state(doc)
+    from .native_study import native_review_state
+
+    native_review = native_review_state(doc, asset_path)
+    if native_review["status"] != "unbound":
+        checks.append(
+            {
+                "id": "native_study",
+                "label": "Native study · " + native_review["status"],
+                "status": (
+                    ("pass" if native_review["passed"] else "fail")
+                    if native_review["status"] == "current"
+                    else "stale"
+                ),
+                "detail": native_review["detail"],
+            }
+        )
     design_review = {"status": "unbound"}
     if doc.get("metadata", {}).get("design_review"):
         from .design_tools import review_state
@@ -417,6 +444,7 @@ def snapshot(document, cad_lock):
         "folding": folding_info,
         "requirements_state": requirements,
         "design_review_state": design_review,
+        "native_study_state": native_review,
         "geometry_signature": geometry_signature(doc),
         "geometry": {
             "parts": meshes,
@@ -594,11 +622,19 @@ def create_router(cad_lock, crate_reader=None):
     router = APIRouter(prefix="/api/studio")
 
     @router.get("/bootstrap")
-    def bootstrap():
+    def bootstrap(document_id: str | None = None, include_document: bool = True):
         from .agent import configured
 
         return {
-            "document": current_document(cad_lock),
+            "document": (
+                (
+                    read_document(document_id, cad_lock)
+                    if document_id
+                    else current_document(cad_lock)
+                )
+                if include_document
+                else None
+            ),
             "documents": list_documents(),
             "capabilities": CAPABILITIES,
             "model": {"name": "muse-wonder-1.0", "configured": configured()},
@@ -607,6 +643,23 @@ def create_router(cad_lock, crate_reader=None):
     @router.post("/preview")
     def preview(body: DocumentBody):
         return snapshot(body.document, cad_lock)
+
+    @router.post("/study/recheck")
+    def recheck_study(body: SaveBody):
+        from .native_study import recheck
+
+        document = normalize_document(body.document)
+        folder = DATA / "native-study" / uuid.uuid4().hex
+        with cad_lock:
+            checked, report = recheck(document, folder, asset_path, cad_lock)
+            return save_document(
+                checked,
+                cad_lock,
+                body.parent_id,
+                "Native study recheck - "
+                + ("passed" if report["passed"] else "issues found"),
+                {"actor": "native_tools", "model_calls": 0, "evidence_id": folder.name},
+            )
 
     @router.post("/enclosure/preview")
     def enclosure_preview(body: EnclosureBody):
@@ -1114,6 +1167,7 @@ def create_router(cad_lock, crate_reader=None):
                     "geometry_signature": value["geometry_signature"],
                     "requirements": value["requirements_state"],
                     "design_review": value["design_review_state"],
+                    "native_study": value["native_study_state"],
                     "motion": {"status": "not_configured"},
                 }
                 if value["requirements_state"]["status"] == "current":

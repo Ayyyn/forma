@@ -54,6 +54,79 @@ def finish(ident):
 
 
 class DesignToolTests(unittest.TestCase):
+    def test_previous_component_manifest_cannot_hide_fresh_export_failure(self):
+        with tempfile.TemporaryDirectory(dir="output") as directory:
+            session = DesignSession({"name": "New", "features": []}, BRIEF, directory)
+            ident = session.call(
+                "draft_candidate", {"base_candidate_id": "base", "plan": plate_plan()}
+            )["candidate_id"]
+            folder = Path(directory) / ident / "exports"
+            folder.mkdir(parents=True)
+            (folder / "components.json").write_text('{"passed":true}', encoding="utf-8")
+            with patch(
+                "crate_studio.component_exports.export_components",
+                side_effect=ValueError("Fresh native exporter failure"),
+            ):
+                report = session.call("verify_exports", {"candidate_id": ident})
+            self.assertTrue(report["ok"])
+            self.assertFalse(report["passed"])
+            self.assertFalse(report["checks"]["components"]["passed"])
+            self.assertIn("Fresh native", report["checks"]["components"]["error"])
+
+    def test_failed_union_mesh_keeps_component_diagnostics_and_blocks_selection(self):
+        doc = {
+            "name": "Edge-contact control",
+            "features": [
+                {
+                    "id": "a",
+                    "type": "box",
+                    "params": {"width": 10, "depth": 10, "height": 2},
+                },
+                {
+                    "id": "b",
+                    "type": "box",
+                    "params": {
+                        "width": 10,
+                        "depth": 10,
+                        "height": 2,
+                        "cx": 10,
+                        "cy": 10,
+                        "operation": "new_body",
+                    },
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory(dir="output") as directory:
+            session = DesignSession(doc, "Retain source for inspection", directory)
+            candidate = session.call(
+                "draft_candidate",
+                {
+                    "base_candidate_id": "base",
+                    "plan": {
+                        "summary": "Retained native contact control",
+                        "status": "ready",
+                        "questions": [],
+                        "evidence": [],
+                        "operations": [],
+                    },
+                },
+            )["candidate_id"]
+            report = session.call("verify_exports", {"candidate_id": candidate})
+            self.assertTrue(report["ok"])
+            self.assertFalse(report["passed"])
+            self.assertFalse(report["checks"]["stl_roundtrip"]["passed"])
+            self.assertTrue(report["checks"]["components"]["passed"])
+            self.assertGreater(
+                report["checks"]["stl_roundtrip"]["topology_diagnostics"][
+                    "nonmanifold_edge_count"
+                ],
+                0,
+            )
+            session.call("check_interference", {"candidate_id": candidate})
+            session.call("render_views", {"candidate_id": candidate})
+            session.acknowledge_views(candidate)
+            self.assertFalse(session.call("finish_design", finish(candidate))["ok"])
+
     def test_draft_interference_is_computed_once_and_blocks_wasted_sweep(self):
         from crate_studio import folding
 

@@ -22,6 +22,8 @@ MODULES = (
     "test_mechanism_study",
     "test_floor_check",
     "test_motion_probe",
+    "test_motion_cache",
+    "test_native_study",
     "test_component_exports",
 )
 

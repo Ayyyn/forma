@@ -13,6 +13,7 @@ from pathlib import Path
 
 import cadquery as cq
 import trimesh
+import numpy as np
 from OCP.Bnd import Bnd_Box
 from OCP.BRepBndLib import BRepBndLib
 
@@ -688,6 +689,37 @@ def build_document(doc, asset_loader=None):
     return result
 
 
+def mesh_topology_diagnostics(mesh):
+    """Locate failed serialized-mesh edges; never repair or relax acceptance."""
+    if mesh.is_watertight:
+        return {
+            "boundary_edge_count": 0,
+            "nonmanifold_edge_count": 0,
+            "bounds_mm": None,
+            "sample_edges": [],
+        }
+    counts = np.bincount(mesh.edges_unique_inverse, minlength=len(mesh.edges_unique))
+    bad = np.flatnonzero(counts != 2)
+    points = mesh.vertices[mesh.edges_unique[bad]].reshape(-1, 3)
+    return {
+        "boundary_edge_count": int(np.sum(counts == 1)),
+        "nonmanifold_edge_count": int(np.sum(counts > 2)),
+        "bounds_mm": (
+            [points.min(axis=0).tolist(), points.max(axis=0).tolist()]
+            if len(points)
+            else None
+        ),
+        "sample_edges": [
+            {
+                "endpoints_mm": mesh.vertices[mesh.edges_unique[i]].tolist(),
+                "incident_triangles": int(counts[i]),
+            }
+            for i in bad[:12]
+        ],
+        "scope": "Serialized STL edge incidence, in mm. Sample coordinates locate failed seams; no automatic mesh repair or relaxed tolerance.",
+    }
+
+
 def export_document(doc, asset_loader, folder):
     doc = deepcopy(doc)
     from .folding import specification as folding_specification
@@ -764,6 +796,7 @@ def export_document(doc, asset_loader, folder):
             "bounds_error_mm": bounds_error,
             "bounds_tolerance_mm": 0.3,
             "representation": "Geometric union mesh; overlapping independent bodies are fused for STL only.",
+            "topology_diagnostics": mesh_topology_diagnostics(mesh),
             "passed": bool(
                 mesh.is_watertight
                 and mesh.is_winding_consistent

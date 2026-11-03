@@ -93,3 +93,50 @@ def translation_probe(
         "physical_validation": False,
         "scope": "Rigid translation of a selected body group in WORLD coordinates with virtual joint constraints released. Exact positive-volume native intersections at sampled offsets only, stopping at first obstruction. A clear path reveals an unblocked sampled direction; an obstruction does not prove global captivity, continuous clearance, rotational retention, assembly, lock function or strength.",
     }
+
+
+def prismatic_pair_probe(parts, raw_spec, joint_id, state_name, distance, samples):
+    """Six independent directions on the actual posed parent/child pair.
+
+    Isolate the interface so an unrelated floor cannot masquerade as a guide.
+    This deliberately does not claim global retention of the whole assembly.
+    """
+    spec = validate_spec(raw_spec, [p["id"] for p in parts])
+    joint = next((j for j in spec["joints"] if j["id"] == joint_id), None)
+    state = next((s for s in spec["states"] if s["name"] == state_name), None)
+    if joint is None or joint["type"] != "prismatic" or state is None:
+        raise ValueError("Choose an existing prismatic joint and named state")
+    matrices = pose_matrices(spec, state["values"])
+    posed = moved_parts(parts, matrices)
+    pair = [p for p in posed if p["id"] in (joint["parent"], joint["child"])]
+    axial = matrices[joint["parent"]][:3, :3] @ np.array(joint["axis"])
+    reference = np.eye(3)[int(np.argmin(np.abs(axial)))]
+    cross_a = np.cross(axial, reference)
+    cross_a /= np.linalg.norm(cross_a)
+    cross_b = np.cross(axial, cross_a)
+    directions = {"axial": axial, "transverse_1": cross_a, "transverse_2": cross_b}
+    results = {}
+    for name, axis in directions.items():
+        for suffix, sign in (("positive", 1), ("negative", -1)):
+            result = translation_probe(
+                pair, [joint["child"]], (sign * axis).tolist(), distance, samples
+            )
+            results[name + "_" + suffix] = {
+                k: v
+                for k, v in result.items()
+                if k not in ("frames", "scope", "mechanism_spec")
+            }
+            results[name + "_" + suffix]["first_obstruction"] = (
+                result["frames"][-1] if not result["path_clear_at_samples"] else None
+            )
+    return {
+        "joint_id": joint_id,
+        "state_name": state_name,
+        "parent": joint["parent"],
+        "child": joint["child"],
+        "spec": spec,
+        "directions": results,
+        "global_retention_verified": False,
+        "physical_validation": False,
+        "scope": "Actual parent/child interface only, other bodies excluded. Native sampled translations in the current parent-rotated axial and two orthogonal transverse directions, with virtual constraints released. Blockage can come from existing walls or floors; it does not prove guide engagement, rotational/global captivity, assembly, locks or strength. Axial motion may legitimately be stopped by end-stop hardware at a travel limit.",
+    }

@@ -14,6 +14,8 @@ General motion accepts model-declared root-first fixed/revolute/prismatic trees 
 
 `probe_translation` releases the virtual constraints and attempts a sampled rigid translation of selected bodies against the remaining solids. It reports the first sampled obstruction and its native intersection bounds. Probe axes are world coordinates, and optional named states use the actual posed source solids. This can reveal a missing guide or an escape direction. An obstruction proves only that local sampled translation is blocked; global captivity, rotation, positive locks, assembly and strength remain separate requirements.
 
+`probe_prismatic_pair` batches both axial signs and four orthogonal transverse directions for one actual parent/child interface. Directions follow the parent's current rotation. It excludes other components so an unrelated floor cannot masquerade as a guide. Use it alongside whole-assembly motion/interference; existing interface walls can also obstruct probes without proving manufactured guidance or print fit.
+
 No general force solver, arbitrary sketch constraint solver, autonomous novelty assessment, unrestricted code execution or reference-browser tool is implemented in this mode. Unsupported work remains explicit rather than being silently replaced by a folding template.
 
 ## Editable rigid components
@@ -23,6 +25,12 @@ Primitive additions/cuts and holes accept an optional `target_part_id` to modify
 ## Runtime and cost
 
 The loop limits model turns, tools per turn, candidates and motion samples. Exact tool results and native builds are reused within their actual source/asset identities. A failed HTTP 429/502/503/504 can receive one retry; ambiguous timeouts are not retried automatically. Empty actionable output is never forwarded as an invalid assistant message; one bounded larger-output retry is permitted before an explicit incomplete result. The existing shared application budget guard and receipts apply to every request and retry. Estimates, reservations and actual provider billing remain different quantities.
+
+Repeated general motion studies reuse complete native reports only for the same owned native build, asset bytes, source geometry and validated mechanism/sampling definition. Copies prevent caller mutations, failed studies remain failed, simultaneous duplicates share work and the process-local cache has entry/serialized-size limits. Direct independent builds bypass reuse. No motion samples or acceptance checks are omitted on an initial or changed study. Startup loads a requested revision once, and history refresh requests only document summaries. Imported drawing projection identity also includes asset bytes.
+
+Failed STL checks include bounded edge-incidence diagnostics with coordinates and the actual affected component's read-back result. Separate component diagnostics remain available when an assembled mesh fails. No automatic mesh repair or relaxed acceptance occurs; component success cannot bypass an assembled-export failure at selection.
+
+For a retained named-state floor study, Properties → **Recheck native study** reruns the existing floor targets, whole sampled motion, source interference and strict exports without a model call. It saves a new revision with source/tool/asset/target-bound numeric evidence. Changed geometry or targets makes it stale; failures remain failures. This does not regenerate a design, replace the earlier model's visual assessment, change requirements, or verify physical locks/strength/print fit. It provides an inexpensive way to revalidate human revisions without asking the model to repeat numerical work.
 
 An incomplete run with retained tool actions offers **Continue design**. It requires the same original project, instruction and selection. The checkpoint replays prior native tool actions locally under current code/assets, supplies current CAD, floor-diagnostic and named-state images where present, and resumes the model conversation. Replayed actions carry zero new provider charge and retain their source run/response provenance; new responses are counted separately. Changed sources require a new proposal. This is checkpoint continuation, not a fresh design or automatic physical approval; completed projects and budgets are never reset.
 

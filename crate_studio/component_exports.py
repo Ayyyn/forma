@@ -8,7 +8,7 @@ import zipfile
 import numpy as np
 import trimesh
 
-from .workspace_geometry import _bounds
+from .workspace_geometry import _bounds, mesh_topology_diagnostics
 
 
 def export_components(built, destination):
@@ -58,6 +58,7 @@ def export_components(built, destination):
                 "bounds_tolerance_mm": 0.3,
                 "volume_tolerance_mm3": max(1e-5, volume * 0.01),
                 "watertight": bool(reopened.is_watertight),
+                "topology_diagnostics": mesh_topology_diagnostics(reopened),
                 "passed": passed,
             }
         )

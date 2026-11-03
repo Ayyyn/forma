@@ -16,6 +16,66 @@ from tests.test_workspace_agent import base, plan, response
 
 
 class ExactReuseTests(unittest.TestCase):
+    def test_bootstrap_loads_requested_document_once_and_metadata_skips_geometry(self):
+        from crate_studio import workspace_server as ws
+        from fastapi import HTTPException
+
+        routes = {
+            r.path: r.endpoint for r in ws.create_router(threading.RLock()).routes
+        }
+        bootstrap = routes["/api/studio/bootstrap"]
+        target = {"id": "requested", "geometry": "retained snapshot"}
+        with patch.object(
+            ws,
+            "current_document",
+            side_effect=AssertionError("Unrelated default must not load"),
+        ), patch.object(ws, "read_document", return_value=target) as read, patch.object(
+            ws, "list_documents", return_value=[]
+        ), patch.object(
+            wa.agent, "configured", return_value=True
+        ):
+            self.assertEqual(bootstrap(document_id="requested")["document"], target)
+            read.assert_called_once()
+            self.assertIsNone(bootstrap(include_document=False)["document"])
+            self.assertEqual(read.call_count, 1)
+            read.side_effect = HTTPException(404, "Missing requested revision")
+            with self.assertRaises(HTTPException):
+                bootstrap(document_id="missing")
+
+    def test_imported_drawing_cache_tracks_actual_asset_bytes(self):
+        from crate_studio import workspace_server as ws
+
+        with tempfile.TemporaryDirectory(dir="output") as root:
+            asset = Path(root) / "asset.step"
+            doc = ws.normalize_document(
+                {
+                    "name": "Asset revision",
+                    "features": [
+                        {
+                            "id": "import",
+                            "type": "import_step",
+                            "params": {"asset_id": "unchanged-id"},
+                        }
+                    ],
+                }
+            )
+            ws.projected.cache_clear()
+            legacy_key = json.dumps(
+                {k: doc[k] for k in ("features", "name", "annotations")}, sort_keys=True
+            )
+            with patch.object(ws, "asset_path", return_value=asset):
+                cq.exporters.export(cq.Workplane("XY").box(10, 8, 2), str(asset))
+                old_key = ws.drawing_key(doc)
+                self.assertIn("Overall width: 10 mm", ws.projected(legacy_key))
+                cq.exporters.export(cq.Workplane("XY").box(20, 8, 2), str(asset))
+                self.assertNotEqual(ws.drawing_key(doc), old_key)
+                value = ws.snapshot(doc, threading.RLock())
+                self.assertEqual(value["metrics"]["size_mm"][0], 20)
+                self.assertIn("Overall width: 20 mm", value["drawing_svg"])
+                # Control: omitting content identity really does preserve the
+                # stale projection despite the native imported body changing.
+                self.assertIn("Overall width: 10 mm", ws.projected(legacy_key))
+
     def setUp(self):
         gc.cache_clear()
 

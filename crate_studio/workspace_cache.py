@@ -79,3 +79,16 @@ def cache_clear():
 def cache_info():
     with _lock:
         return Info(_hits, _misses, MAXSIZE, len(_values))
+
+
+def identity_for_build(result):
+    """Identity only for a currently owned, exact native build; never infer one.
+
+    Direct build_document callers bypass downstream reuse. Assets and loaded
+    geometry code are already included in the owned cache key.
+    """
+    with _lock:
+        for key, value in _values.items():
+            if value is result:
+                return hashlib.sha256(key.encode()).hexdigest()
+    return None

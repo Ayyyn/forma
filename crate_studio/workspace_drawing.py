@@ -541,7 +541,7 @@ def _parameter_scenes(data):
         return []
     scenes = []
     scene = []
-    y = 0
+    y, column = 0, 0
 
     def text(x, y, value, size=12):
         scene.append(
@@ -549,7 +549,7 @@ def _parameter_scenes(data):
         )
 
     def page():
-        nonlocal scene, y
+        nonlocal scene, y, column
         if scene:
             scenes.append(scene)
         scene = []
@@ -581,40 +581,89 @@ def _parameter_scenes(data):
             "Full editable feature history, annotations and project metadata: drawing-source.json / project.json",
             11,
         )
-        y = 140
+        column, y = 0, 140
+        column_heading()
+
+    def column_heading():
+        nonlocal y
+        x = 40 + column * 580
+        for dx, title in (
+            (0, "Parameter"),
+            (155, "Source value"),
+            (345, "Units / meaning"),
+        ):
+            text(x + dx, y, title, 10)
+        y += 25
+
+    def next_column():
+        nonlocal column, y
+        if column == 0:
+            column, y = 1, 140
+            column_heading()
+        else:
+            page()
+
+    widths = {}
+
+    def wrapped(value, width, size=10.5):
+        lines, line, length = [], "", 0
+        for char in value:
+            token = (size, char)
+            if token not in widths:
+                widths[token] = pdfmetrics.stringWidth(char, "FormaSans", size)
+            extent = widths[token]
+            if line and length + extent > width:
+                lines.append(line)
+                line, length = "", 0
+            line += char
+            length += extent
+        return lines + [line]
+
+    def feature_heading(feature, continued=False):
+        nonlocal y
+        label = (
+            feature["id"]
+            + " / "
+            + feature["type"]
+            + (" (continued)" if continued else "")
+        )
+        for line in wrapped(label, 540, 11.5):
+            text(40 + column * 580, y, line, 11.5)
+            y += 14
+        y += 7
 
     page()
+    active = None
     for feature, key, value, meaning in rows:
-        lines = []
-        remaining = value
-        while remaining:
-            if pdfmetrics.stringWidth(remaining, "FormaSans", 12) <= 1090:
-                lines.append(remaining)
-                break
-            width = 0
-            cut = 0
-            space = 0
-            for i, char in enumerate(remaining):
-                width += pdfmetrics.stringWidth(char, "FormaSans", 12)
-                if width > 1090:
-                    break
-                cut = i + 1
-                if char.isspace():
-                    space = cut
-            cut = space or cut
-            lines.append(remaining[:cut])
-            remaining = remaining[cut:]
-        lines = lines or [""]
-        if y + 34 > 740:
-            page()
-        text(40, y, f"{feature['id']} / {key}  [{meaning}]", 11)
-        y += 17
-        for line in lines:
-            if y > 735:
-                page()
-            text(55, y, line, 12)
-            y += 16
-        y += 8
+        if feature["id"] != active:
+            if y + 50 > 735:
+                next_column()
+            feature_heading(feature)
+            active = feature["id"]
+        cells = [wrapped(key, 145), wrapped(value, 180), wrapped(meaning, 195)]
+        count, offset = max(map(len, cells)), 0
+        while offset < count:
+            capacity = int((735 - y) // 13) + 1
+            if capacity <= 0:
+                next_column()
+                feature_heading(feature, True)
+                continue
+            chunk = min(capacity, count - offset)
+            for dx, lines in zip((0, 155, 345), cells):
+                for index in range(chunk):
+                    if offset + index < len(lines):
+                        text(
+                            40 + column * 580 + dx,
+                            y + 13 * index,
+                            lines[offset + index],
+                            10.5,
+                        )
+            y += 13 * chunk + 4
+            offset += chunk
+            if offset < count:
+                next_column()
+                feature_heading(feature, True)
+        y += 3
     if scene:
         scenes.append(scene)
     return scenes

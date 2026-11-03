@@ -23,6 +23,8 @@ TOOL_VERSION = hashlib.sha256(
         for name in (
             "design_tools.py",
             "mechanism_study.py",
+            "motion_cache.py",
+            "native_study.py",
             "motion_probe.py",
             "component_exports.py",
             "floor_check.py",
@@ -56,7 +58,9 @@ def review_identity(document, asset_loader=None):
     source.setdefault("annotations", [])
     source.setdefault("display", {})
     source["metadata"] = {
-        key: value for key, value in metadata.items() if key != "design_review"
+        key: value
+        for key, value in metadata.items()
+        if key not in ("design_review", "native_study_review")
     }
     source = deepcopy(source)
     from .folding import specification as fold_specification
@@ -130,6 +134,20 @@ def report_key(name, arguments):
 
 def tool_definitions():
     rows = [
+        (
+            "probe_prismatic_pair",
+            "Probe six directions of one actual parent/child prismatic interface in one named state, isolating it from unrelated corners. Batches both axial signs and four orthogonal transverse probes. Useful for guide diagnostics; blockage alone is not proof of manufactured guidance, global captivity or locks. Use at separated and compact states, alongside whole-assembly interference/motion.",
+            _object(
+                {
+                    **_CID,
+                    "mechanism_spec": {"type": "object"},
+                    "joint_id": _STRING,
+                    "state_name": _STRING,
+                    "max_distance_mm": {"type": "number"},
+                    "samples": {"type": "integer"},
+                }
+            ),
+        ),
         (
             "probe_translation",
             "Release virtual constraints and probe an unwanted rigid translation of selected bodies against the others. Useful for finding missing real guide/retention geometry. Direction is WORLD coordinates; use several directions and named sizes. An obstruction is NOT proof of captivity or a working lock. Returns exact native sampled intersections and their bounds.",
@@ -732,6 +750,25 @@ class DesignSession:
             )
             self._write_json(ident, stem + ".json", value)
             return {**value, "evidence": ident + "/" + stem + ".json"}
+        if name == "probe_prismatic_pair":
+            from .motion_probe import prismatic_pair_probe
+
+            value = prismatic_pair_probe(
+                built["parts"],
+                a["mechanism_spec"],
+                a["joint_id"],
+                a["state_name"],
+                a["max_distance_mm"],
+                a["samples"],
+            )
+            stem = (
+                "pair-probe-"
+                + hashlib.sha256(json.dumps(a, sort_keys=True).encode()).hexdigest()[
+                    :12
+                ]
+            )
+            self._write_json(ident, stem + ".json", value)
+            return {**value, "evidence": ident + "/" + stem + ".json"}
         if name == "render_state":
             from .mechanism_study import validate_spec, pose_matrices, moved_parts
             from .workspace_geometry import _mesh
@@ -785,9 +822,24 @@ class DesignSession:
 
             folder = self.folder / ident / "exports"
             value = export_document(doc, self.asset_loader, folder)
+            try:
+                components = export_components(built, folder)
+            except ValueError as error:
+                path = folder / "components.json"
+                components = (
+                    json.loads(path.read_text(encoding="utf-8"))
+                    if path.is_file()
+                    else {"passed": False, "error": str(error)}
+                )
+                # A previous artifact must never turn a fresh exporter error
+                # into success. Preserve diagnostics with an explicit failure.
+                components.update(passed=False, error=str(error))
+            value["checks"]["components"] = components
+            value["checks"]["passed"] = (
+                value["checks"]["passed"] and components["passed"]
+            )
             if value["checks"]["passed"]:
                 export_drawings(doc, built["parts"], folder)
-                value["checks"]["components"] = export_components(built, folder)
             files = {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in folder.iterdir()

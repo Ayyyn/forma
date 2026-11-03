@@ -338,7 +338,7 @@ function status(message) {
 function setBusy(b) {
   state.busy = b;
   $$(
-    ".operation-tools button,#save-document,#import-document,#new-document,#undo,#redo,#update-feature",
+    ".operation-tools button,#save-document,#import-document,#new-document,#undo,#redo,#update-feature,#native-study-recheck",
   ).forEach((el) => (el.disabled = b));
   if (!b) updateHistoryButtons();
 }
@@ -737,12 +737,39 @@ function renderSummary() {
   const review = state.document.metadata?.design_review;
   $("#design-study").classList.toggle("hidden", !review);
   if (review) {
-    const current = state.snapshot.design_review_state?.status === "current";
-    const floors = Object.entries(review.reports || {}).filter(([key]) => key.startsWith("floor:state:"));
-    const motion = review.reports?.motion;
-    $("#design-study-summary").innerHTML = `<p>${current ? "Recorded geometry checks" : "Review needs updating"}</p>${floors.length ? `<table class="study-table"><thead><tr><th>State</th><th>Floor target</th><th>Coverage</th></tr></thead><tbody>${floors.map(([,floor]) => `<tr><td>${esc(floor.state_name)}</td><td>${floor.footprint.size_mm.map(value=>fmt(value)).join(" × ")} mm</td><td>${current ? fmt(100*floor.coverage_fraction) + "%" : "Stale"}</td></tr>`).join("")}</tbody></table>` : ""}${motion ? `<p>${motion.sample_count || motion.frames?.length || ""} sampled poses · ${current ? motion.passed ? "Geometry passed" : "Issues found" : "Stale"}</p>` : ""}<details><summary>Remaining work</summary><ul>${(review.unresolved || []).map(item=>`<li>${esc(item)}</li>`).join("")}</ul></details>`;
+    const nativeCurrent = state.snapshot.native_study_state?.status === "current";
+    const native = state.document.metadata.native_study_review;
+    const current = nativeCurrent || state.snapshot.design_review_state?.status === "current";
+    const reports = nativeCurrent ? native.reports : review.reports;
+    const floors = Object.entries(reports || {}).filter(([key]) => key.startsWith("floor:state:"));
+    const motion = reports?.motion;
+    $("#native-study-recheck").disabled = state.busy || !state.document.metadata.design_mechanism;
+    $("#design-study-summary").innerHTML = `<p>${nativeCurrent ? native.passed ? "Native checks current" : "Native checks found issues" : current ? "Recorded geometry checks" : "Review needs updating"}</p>${floors.length ? `<table class="study-table"><thead><tr><th>State</th><th>Floor target</th><th>Coverage</th></tr></thead><tbody>${floors.map(([,floor]) => `<tr><td>${esc(floor.state_name)}</td><td>${floor.footprint.size_mm.map(value=>fmt(value)).join(" × ")} mm</td><td>${current ? fmt(100*floor.coverage_fraction) + "%" : "Stale"}</td></tr>`).join("")}</tbody></table>` : ""}${motion ? `<p>${motion.sample_count || motion.frames?.length || ""} sampled poses · ${current ? motion.passed ? "Geometry passed" : "Issues found" : "Stale"}</p>` : ""}${nativeCurrent ? `<p>Native recheck · no model call. Visual and physical approval remain separate.</p>` : ""}<details><summary>Remaining work</summary><ul>${(review.unresolved || []).map(item=>`<li>${esc(item)}</li>`).join("")}</ul></details>`;
   }
 }
+
+$("#native-study-recheck").addEventListener("click", async () => {
+  if (state.busy) return;
+  if (state.pending || state.inspectorDirty || state.agentPreview) {
+    toast("Save or discard pending edits before rechecking.", true);
+    return;
+  }
+  setBusy(true);
+  $("#native-study-recheck").textContent = "Checking…";
+  status("Rechecking retained study targets…");
+  try {
+    const checked = await api("/study/recheck", {document: state.document, parent_id: state.snapshot.id, label: "Native study recheck"});
+    useSnapshot(checked);
+    await refreshHistory();
+    toast(checked.native_study_state?.passed ? "Native study checked. No model call." : "Native study found issues; inspect the checks.", !checked.native_study_state?.passed);
+  } catch (error) {
+    status("Native study recheck failed");
+    toast(error.message, true);
+  } finally {
+    $("#native-study-recheck").textContent = "Recheck native study";
+    setBusy(false);
+  }
+});
 
 function renderFeedback() {
   const checks = state.snapshot?.checks || [],
@@ -822,8 +849,7 @@ $("#history-scope").addEventListener("click", () => {
 });
 
 async function refreshHistory() {
-  const b = await api("/bootstrap");
-  state.documents = b.documents || [];
+  state.documents = await api("/documents");
   renderHistory();
   updateHistoryButtons();
 }
@@ -2391,7 +2417,12 @@ window.addEventListener("resize", () => {
 async function start() {
   const graphics = setup3D();
   try {
-    const b = await api("/bootstrap");
+    const query = new URLSearchParams(location.search);
+    const crate = query.get("crate"),
+      documentId = query.get("document"),
+      requestedView = query.get("view");
+    const bootstrapQuery = crate ? "?include_document=false" : documentId ? "?document_id=" + encodeURIComponent(documentId) : "";
+    const b = await api("/bootstrap" + bootstrapQuery);
     state.capabilities = b.capabilities || { feature_types: [] };
     state.documents = b.documents || [];
     state.model = b.model || {};
@@ -2404,15 +2435,9 @@ async function start() {
       .map((x) => "." + x)
       .join(",");
     await graphics;
-    const query = new URLSearchParams(location.search);
-    const crate = query.get("crate"),
-      documentId = query.get("document"),
-      requestedView = query.get("view");
     const initial = crate
       ? await api("/from-crate/" + encodeURIComponent(crate), {})
-      : documentId
-        ? await api("/documents/" + encodeURIComponent(documentId))
-        : b.document;
+      : b.document;
     useSnapshot(initial);
     if (crate) {
       await refreshHistory();
