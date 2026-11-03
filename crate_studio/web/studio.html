@@ -180,6 +180,9 @@
                 <h1>Design drawing</h1>
               </div>
               <div class="drawing-actions">
+                <select id="drawing-page" aria-label="Drawing page"><option value="-1">Overview</option></select>
+                <select id="drawing-layout" aria-label="Drawing layout"><option value="aligned-v1">Aligned views</option><option value="legacy-v1">Legacy sheet</option></select>
+                <button id="edit-section">Section…</button>
                 <button id="add-annotation">T Add note</button
                 ><button data-export="svg">Export SVG ↗</button>
               </div>
@@ -306,7 +309,7 @@
     <dialog id="print-settings-dialog">
       <form method="dialog">
         <h2>Prepare print pack</h2>
-        <p class="parameter-note">Separate components, plate layouts, a hinge-fit coupon and assembly guide. Slice with your printer profile.</p>
+        <p class="parameter-note">Separate parts, provisional plate layouts and measured drawings. Folding assemblies also include a hinge coupon. Confirm supports and fit with your actual printer profile.</p>
         <label class="field-label">Printer name<input id="print-printer" maxlength="100" value="Unspecified"></label>
         <div class="field-row three">
           <label class="field-label">Bed width · mm<input id="print-width" type="number" min="50" max="1000" value="220"></label>
@@ -319,6 +322,16 @@
           <label class="field-label">Material<input id="print-material" maxlength="100" value="PLA"></label>
         </div>
         <div class="dialog-actions"><button value="cancel">Cancel</button><button id="print-confirm" type="button" class="primary">Save settings & export</button></div>
+      </form>
+    </dialog>
+    <dialog id="section-dialog">
+      <div class="dialog-heading"><h2>Native section</h2><button id="section-close" aria-label="Close section editor">×</button></div>
+      <form id="section-form">
+        <label class="field-label">Name<input id="section-name" maxlength="50" required></label>
+        <label class="field-label">Plane normal<select id="section-axis"><option>X</option><option>Y</option><option>Z</option></select></label>
+        <label class="field-label">Plane position · mm<input id="section-offset" type="number" step="any" min="-10000" max="10000" required></label>
+        <label class="field-label">Bodies<select id="section-body"></select></label>
+        <div class="dialog-actions"><button id="section-remove" type="button" class="danger">Remove section</button><button id="section-save" type="button" class="primary">Add section</button></div>
       </form>
     </dialog>
     <dialog id="component-dialog">

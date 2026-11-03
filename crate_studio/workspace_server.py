@@ -31,7 +31,6 @@ from pydantic import BaseModel, ConfigDict, Field
 import ezdxf
 
 from .workspace_geometry import (
-    build_document,
     export_document,
     _bounds as exact_bounds_mm,
     MAX_FEATURES,
@@ -80,8 +79,13 @@ EXPORT_VERSION = hashlib.sha256(
         for name in (
             "workspace_geometry.py",
             "workspace_drawing.py",
+            "drawing_layout.py",
+            "drawing_sections.py",
             "workspace_server.py",
             "component_exports.py",
+            "assembly_study.py",
+            "retention_study.py",
+            "prismatic_controls.py",
             "design_tools.py",
             "mechanism_study.py",
             "motion_cache.py",
@@ -92,6 +96,7 @@ EXPORT_VERSION = hashlib.sha256(
             "workspace_workflow.py",
             "folding_study.py",
             "folding_print.py",
+            "mechanical_print.py",
         )
     )
 ).hexdigest()[:12]
@@ -217,6 +222,17 @@ def normalize_document(value):
     doc.setdefault("metadata", {})
     if not isinstance(doc["display"], dict) or not isinstance(doc["metadata"], dict):
         raise ValueError("Document display and metadata must be objects")
+    doc["metadata"].setdefault(
+        "drawing_layout", "legacy-v1" if doc["annotations"] else "aligned-v1"
+    )
+    if doc["metadata"]["drawing_layout"] not in ("legacy-v1", "aligned-v1"):
+        raise ValueError("Unknown drawing layout")
+    if "drawing_sections" in doc["metadata"]:
+        from .drawing_sections import specifications
+
+        doc["metadata"]["drawing_sections"] = specifications(
+            doc["metadata"]["drawing_sections"]
+        )
     from .folding import specification as fold_specification
 
     for feature in doc["features"]:
@@ -268,6 +284,14 @@ def normalize_document(value):
     return doc
 
 
+def export_key(doc):
+    """Bind cached files to source, actual imported bytes and loaded exporters."""
+    source = json.dumps(
+        [doc, asset_identity(doc, asset_path)], sort_keys=True, allow_nan=False
+    )
+    return EXPORT_VERSION + "-" + hashlib.sha256(source.encode()).hexdigest()[:16]
+
+
 def build_key(doc):
     normalized = normalize_document(doc)
     return json.dumps(
@@ -275,7 +299,7 @@ def build_key(doc):
     )
 
 
-def drawing_key(doc):
+def drawing_key(doc, context=None):
     return json.dumps(
         {
             "features": doc["features"],
@@ -284,8 +308,14 @@ def drawing_key(doc):
             "metadata": {
                 "component_instances": doc.get("metadata", {}).get(
                     "component_instances", {}
-                )
+                ),
+                "drawing_layout": doc.get("metadata", {}).get(
+                    "drawing_layout",
+                    "legacy-v1" if doc.get("annotations") else "aligned-v1",
+                ),
+                "drawing_sections": doc.get("metadata", {}).get("drawing_sections", []),
             },
+            "_drawing_context": context or {},
             "assets": asset_identity(doc, asset_path),
         },
         sort_keys=True,
@@ -307,10 +337,12 @@ def projected(encoded):
     # Asset content belongs to the cache identity, not the editable document
     # schema passed to native regeneration.
     doc.pop("assets", None)
-    return drawing_svg(doc, built(build_key(doc))["parts"])
+    context = doc.pop("_drawing_context", {})
+    native = built(build_key(doc))
+    return drawing_svg(doc, native["parts"], context=context, native_build=native)
 
 
-def snapshot(document, cad_lock):
+def snapshot(document, cad_lock, drawing_context=None, include_drawing=True):
     doc = normalize_document(document)
     with cad_lock:
         result = built(build_key(doc))
@@ -322,8 +354,10 @@ def snapshot(document, cad_lock):
         drawing_error = None
         try:
             sheet = (
-                projected(drawing_key(doc))
-                if valid
+                projected(drawing_key(doc, drawing_context))
+                if valid and include_drawing
+                else None
+                if not include_drawing
                 else '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800"><rect width="1200" height="800" fill="white"/><text x="50" y="65" font-family="Arial" font-size="25">'
                 + html.escape(doc["name"])
                 + '</text><text x="50" y="110" font-family="Arial" font-size="16">Add valid solid geometry to generate model views.</text></svg>'
@@ -367,6 +401,19 @@ def snapshot(document, cad_lock):
         },
     ]
     requirements = requirement_state(doc)
+    development = doc.get("metadata", {}).get("assembly_development", {})
+    remaining = (
+        development.get("remaining", []) if isinstance(development, dict) else []
+    )
+    if isinstance(remaining, list) and remaining:
+        checks.append(
+            {
+                "id": "practical_release",
+                "label": "Prototype requirements unfinished",
+                "status": "fail",
+                "detail": "; ".join(str(value)[:220] for value in remaining[:6]),
+            }
+        )
     from .native_study import native_review_state
 
     native_review = native_review_state(doc, asset_path)
@@ -452,6 +499,8 @@ def snapshot(document, cad_lock):
         "design_review_state": design_review,
         "native_study_state": native_review,
         "geometry_signature": geometry_signature(doc),
+        "geometry_version": GEOMETRY_VERSION,
+        "asset_identity": asset_identity(doc, asset_path),
         "geometry": {
             "parts": meshes,
             "face_meshes": result["face_meshes"],
@@ -463,6 +512,7 @@ def snapshot(document, cad_lock):
         "passed": valid,
         "document_valid": valid or empty,
         "drawing_svg": sheet,
+        "drawing_pending": bool(valid and not include_drawing),
     }
 
 
@@ -480,20 +530,52 @@ def list_documents():
     return sorted(rows, key=lambda x: x["created_at"], reverse=True)
 
 
-def read_document(id, cad_lock):
+@lru_cache(maxsize=4)
+def _revision_snapshot(encoded, cad_lock):
+    # lru_cache does not hold its map lock while running the function. A warm
+    # immutable revision therefore avoids the CAD lock even during an agent
+    # sweep; concurrent misses still serialize inside snapshot's native lock.
+    document, revision_id, _assets, include_drawing = json.loads(encoded)
+    return snapshot(document, cad_lock, {"revision_id": revision_id}, include_drawing)
+
+
+def revision_snapshot(document, revision_id, cad_lock, include_drawing=True):
+    encoded = json.dumps(
+        [document, revision_id, asset_identity(document, asset_path), include_drawing],
+        sort_keys=True,
+        allow_nan=False,
+    )
+    return deepcopy(_revision_snapshot(encoded, cad_lock))
+
+
+def read_document(id, cad_lock, include_drawing=True):
     path = DOCS / (valid_id(id) + ".json")
     if not path.is_file():
         raise HTTPException(404, "Document not found")
     record = json.loads(path.read_text(encoding="utf-8"))
-    result = {**snapshot(record["document"], cad_lock), **record}
+    result = {
+        **record,
+        **revision_snapshot(record["document"], id, cad_lock, include_drawing),
+    }
     result["undo_id"] = record["parent_id"]
     children = [r for r in list_documents() if r["parent_id"] == id]
     result["redo_id"] = children[0]["id"] if children else None
     return result
 
 
-def save_document(document, cad_lock, parent_id=None, label="Edit", provenance=None):
-    value = snapshot(document, cad_lock)
+def save_document(
+    document,
+    cad_lock,
+    parent_id=None,
+    label="Edit",
+    provenance=None,
+    include_drawing=True,
+):
+    document_id = "cad-" + uuid.uuid4().hex[:12]
+    # Normalize before keying so the subsequent saved-file read is an exact hit.
+    value = revision_snapshot(
+        normalize_document(document), document_id, cad_lock, include_drawing
+    )
     if not value["document_valid"]:
         detail = next(
             (
@@ -505,9 +587,10 @@ def save_document(document, cad_lock, parent_id=None, label="Edit", provenance=N
         )
         raise ValueError(detail)
     if parent_id:
-        read_document(parent_id, cad_lock)
+        if not (DOCS / (valid_id(parent_id) + ".json")).is_file():
+            raise HTTPException(404, "Parent document not found")
     record = {
-        "id": "cad-" + uuid.uuid4().hex[:12],
+        "id": document_id,
         "parent_id": parent_id,
         "name": value["document"]["name"],
         "label": label[:150],
@@ -527,16 +610,18 @@ def save_document(document, cad_lock, parent_id=None, label="Edit", provenance=N
     return {**value, **record, "undo_id": parent_id, "redo_id": None}
 
 
-def current_document(cad_lock):
+def current_document(cad_lock, include_drawing=True):
     pointer = DATA / "current.json"
     if pointer.is_file():
         try:
-            return read_document(json.loads(pointer.read_text())["id"], cad_lock)
+            return read_document(
+                json.loads(pointer.read_text())["id"], cad_lock, include_drawing
+            )
         except (KeyError, HTTPException, ValueError):
             pass
     rows = list_documents()
     return (
-        read_document(rows[0]["id"], cad_lock)
+        read_document(rows[0]["id"], cad_lock, include_drawing)
         if rows
         else save_document(DEFAULT_DOCUMENT, cad_lock, label="Mounting plate example")
     )
@@ -579,6 +664,7 @@ def portable_document(document):
 class DocumentBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     document: dict
+    include_drawing: bool = True
 
 
 class SaveBody(DocumentBody):
@@ -596,9 +682,19 @@ class MotionBody(DocumentBody):
     config: dict | None = None
 
 
+class SectionBody(DocumentBody):
+    section_index: int = Field(ge=0, le=5)
+    revision_id: str | None = None
+
+
+class DrawingBody(DocumentBody):
+    revision_id: str | None = None
+
+
 class CursorBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_id: str
+    include_drawing: bool = True
 
 
 class ImportBody(BaseModel):
@@ -651,15 +747,26 @@ def create_router(cad_lock, crate_reader=None):
     router = APIRouter(prefix="/api/studio")
 
     @router.get("/bootstrap")
-    def bootstrap(document_id: str | None = None, include_document: bool = True):
+    def bootstrap(
+        document_id: str | None = None,
+        include_document: bool = True,
+        include_drawing: bool = True,
+    ):
         from .agent import configured
 
         return {
             "document": (
                 (
-                    read_document(document_id, cad_lock)
+                    read_document(
+                        document_id,
+                        cad_lock,
+                        **({"include_drawing": False} if not include_drawing else {}),
+                    )
                     if document_id
-                    else current_document(cad_lock)
+                    else current_document(
+                        cad_lock,
+                        **({"include_drawing": False} if not include_drawing else {}),
+                    )
                 )
                 if include_document
                 else None
@@ -671,7 +778,7 @@ def create_router(cad_lock, crate_reader=None):
 
     @router.post("/preview")
     def preview(body: DocumentBody):
-        return snapshot(body.document, cad_lock)
+        return snapshot(body.document, cad_lock, include_drawing=body.include_drawing)
 
     @router.post("/study/recheck")
     def recheck_study(body: SaveBody):
@@ -716,27 +823,86 @@ def create_router(cad_lock, crate_reader=None):
     def documents():
         return list_documents()
 
+    @router.post("/drawing/section")
+    def section_preview(body: SectionBody):
+        from .workspace_drawing import section_page, _svg
+
+        doc = normalize_document(body.document)
+        context = {}
+        if body.revision_id:
+            path = DOCS / (valid_id(body.revision_id) + ".json")
+            if (
+                path.is_file()
+                and normalize_document(
+                    json.loads(path.read_text(encoding="utf-8"))["document"]
+                )
+                == doc
+            ):
+                context["revision_id"] = body.revision_id
+        with cad_lock:
+            result = built(build_key(doc))
+            if not result["checks"]["passed"]:
+                raise ValueError("Section requires valid native solid geometry")
+            page = section_page(doc, result["parts"], body.section_index, context)
+            return {
+                "svg": _svg({"layout": "section-v1"}, scene=page["scene"]),
+                "measurements": page["measurements"],
+                "geometry_signature": geometry_signature(doc),
+            }
+
+    @router.post("/drawing/overview")
+    def drawing_overview(body: DrawingBody):
+        doc = normalize_document(body.document)
+        context = {}
+        if body.revision_id:
+            path = DOCS / (valid_id(body.revision_id) + ".json")
+            if (
+                path.is_file()
+                and normalize_document(
+                    json.loads(path.read_text(encoding="utf-8"))["document"]
+                )
+                == doc
+            ):
+                context["revision_id"] = body.revision_id
+        with cad_lock:
+            native = built(build_key(doc))
+            if not native["checks"]["passed"]:
+                raise ValueError("Drawing requires valid native solids")
+            svg = projected(drawing_key(doc, context))
+        return {
+            "svg": svg,
+            "geometry_signature": geometry_signature(doc),
+            "geometry_version": GEOMETRY_VERSION,
+            "asset_identity": asset_identity(doc, asset_path),
+        }
+
     @router.post("/documents")
     def create(body: SaveBody):
-        return save_document(body.document, cad_lock, body.parent_id, body.label)
+        return save_document(
+            body.document,
+            cad_lock,
+            body.parent_id,
+            body.label,
+            include_drawing=body.include_drawing,
+        )
 
     @router.get("/documents/{id}")
-    def document(id: str):
-        return read_document(id, cad_lock)
+    def document(id: str, include_drawing: bool = True):
+        return read_document(id, cad_lock, include_drawing)
 
     @router.post("/undo")
     def undo(body: CursorBody):
-        current = read_document(body.current_id, cad_lock)
+        current = read_document(body.current_id, cad_lock, body.include_drawing)
         target = current["undo_id"] or current["id"]
         (DATA / "current.json").write_text(json.dumps({"id": target}), encoding="utf-8")
-        return read_document(target, cad_lock)
+        return read_document(target, cad_lock, body.include_drawing)
 
     @router.post("/redo")
     def redo(body: CursorBody):
-        current = read_document(body.current_id, cad_lock)
+        current = read_document(body.current_id, cad_lock, body.include_drawing)
         target = current["redo_id"] or current["id"]
         (DATA / "current.json").write_text(json.dumps({"id": target}), encoding="utf-8")
-        return read_document(target, cad_lock)
+        return read_document(target, cad_lock, body.include_drawing)
 
     @router.post("/from-crate/{id}")
     def from_crate(id: str):
@@ -1099,6 +1265,44 @@ def create_router(cad_lock, crate_reader=None):
             "scope": "Positive-volume BREP intersections only; intended joins and contact require review.",
         }
 
+    @router.get("/checkpoints/{id}")
+    def retained_checkpoint(id: str, document_id: str):
+        from .workspace_agent import RUNS
+        from .design_checkpoint import _canonical_project, retained_context
+
+        folder = RUNS / valid_id(id)
+        prior_path = folder / "proposal.json"
+        events_path = folder / "events.jsonl"
+        if not prior_path.is_file() or not events_path.is_file():
+            raise HTTPException(404, "No retained completed checkpoint")
+        prior = json.loads(prior_path.read_text(encoding="utf-8"))
+        if prior.get("status") != "incomplete" or not prior.get("has_checkpoint"):
+            raise HTTPException(
+                409, "Only an incomplete retained design can be reopened"
+            )
+        try:
+            context = retained_context(id)
+        except (ValueError, KeyError, OSError) as error:
+            raise HTTPException(
+                409, "Checkpoint has no recoverable original design context"
+            ) from error
+        current = read_document(document_id, cad_lock, include_drawing=False)
+        if _canonical_project(context["project"]) != _canonical_project(
+            current["document"]
+        ):
+            raise HTTPException(409, "Checkpoint source changed; start a new proposal")
+        selection = context.get("selection") or {}
+        if selection.get("topology_ids"):
+            raise HTTPException(
+                409,
+                "Geometry-selected checkpoints require the original selection session; portable recovery supports document and feature selections",
+            )
+        return {
+            "prompt": context["original_instruction"],
+            "selection": selection,
+            "proposal": prior,
+        }
+
     @router.post("/agent", status_code=202)
     def start_agent(body: PromptBody):
         from .workspace_agent import propose_document
@@ -1110,7 +1314,7 @@ def create_router(cad_lock, crate_reader=None):
 
         if not configured():
             raise HTTPException(503, "Meta API is not configured")
-        base = read_document(body.document_id, cad_lock)
+        base = read_document(body.document_id, cad_lock, include_drawing=False)
         known = {
             x["id"]
             for x in base["geometry"]["face_meshes"] + base["geometry"]["edge_meta"]
@@ -1167,7 +1371,7 @@ def create_router(cad_lock, crate_reader=None):
                 JOBS[id]["events"].append({"kind": kind, "message": message})
 
         def preview(document, candidate_id):
-            value = snapshot(document, cad_lock)
+            value = snapshot(document, cad_lock, include_drawing=False)
             with JOBS_LOCK:
                 sequence = JOBS[id].get("preview", {}).get("sequence", 0) + 1
                 JOBS[id]["_preview_snapshot"] = value
@@ -1191,7 +1395,12 @@ def create_router(cad_lock, crate_reader=None):
                     asset_loader=asset_path,
                     on_event=event,
                     **(
-                        {"on_preview": preview, "component_store": store_asset}
+                        {
+                            "on_preview": preview,
+                            "component_store": store_asset,
+                            "max_turns": 20,
+                            "max_tokens": 32768 if body.resume_from else 16384,
+                        }
                         if body.agent_mode == "tools"
                         else {}
                     ),
@@ -1209,7 +1418,9 @@ def create_router(cad_lock, crate_reader=None):
                     ),
                 )
                 if p["status"] == "ready":
-                    p["snapshot"] = snapshot(p["document"], cad_lock)
+                    p["snapshot"] = snapshot(
+                        p["document"], cad_lock, include_drawing=False
+                    )
                 with JOBS_LOCK:
                     JOBS[id].update(
                         status="completed", stage="Review proposal", proposal=p
@@ -1272,7 +1483,7 @@ def create_router(cad_lock, crate_reader=None):
                     409, "Only a ready verified proposal can be applied"
                 )
             if job.get("applied_id"):
-                return read_document(job["applied_id"], cad_lock)
+                return read_document(job["applied_id"], cad_lock, include_drawing=False)
             p = job["proposal"]
             saved = save_document(
                 p["document"],
@@ -1285,6 +1496,7 @@ def create_router(cad_lock, crate_reader=None):
                     "response_ids": p["response_ids"],
                     "cache": p.get("cache", {}),
                 },
+                include_drawing=False,
             )
             with JOBS_LOCK:
                 JOBS[id]["applied_id"] = saved["id"]
@@ -1292,16 +1504,38 @@ def create_router(cad_lock, crate_reader=None):
 
     @router.get("/documents/{id}/export/{format}")
     def export(id: str, format: str):
-        value = read_document(id, cad_lock)
+        value = read_document(id, cad_lock, include_drawing=False)
         if format not in CAPABILITIES["exports"]:
             raise HTTPException(404, "Unknown export format")
         if format == "print":
-            from .folding_print import export_print_pack
+            from .folding_print import export_print_pack as folding_print_pack
+            from .mechanical_print import export_print_pack as mechanical_print_pack
 
-            folder = DATA / "exports" / valid_id(id) / EXPORT_VERSION / "print"
+            folder = (
+                DATA
+                / "exports"
+                / valid_id(id)
+                / export_key(value["document"])
+                / "print"
+            )
             with cad_lock:
                 if not (folder / "complete.json").is_file():
-                    packed = export_print_pack(value["document"], folder, asset_path)
+                    document = value["document"]
+                    if any(
+                        f["type"] == "folding_assembly" for f in document["features"]
+                    ):
+                        packed = folding_print_pack(document, folder, asset_path)
+                    else:
+                        packed = mechanical_print_pack(
+                            document,
+                            folder,
+                            asset_path,
+                            context={
+                                "revision_id": id,
+                                "pose": "Source construction pose",
+                            },
+                            portable_source=portable_document(document),
+                        )
                     (folder / "complete.json").write_text(
                         json.dumps(
                             {
@@ -1317,7 +1551,7 @@ def create_router(cad_lock, crate_reader=None):
                 media_type="application/zip",
                 filename="print-pack.zip",
             )
-        folder = DATA / "exports" / valid_id(id) / EXPORT_VERSION
+        folder = DATA / "exports" / valid_id(id) / export_key(value["document"])
         with cad_lock:
             if not (folder / "complete.json").is_file():
                 result = export_document(value["document"], asset_path, folder)
@@ -1329,7 +1563,9 @@ def create_router(cad_lock, crate_reader=None):
                 from .component_exports import export_components
 
                 export_components(built(build_key(value["document"])), folder)
-                drawing = export_drawings(value["document"], parts, folder)
+                drawing = export_drawings(
+                    value["document"], parts, folder, context={"revision_id": id}
+                )
                 portable = portable_document(value["document"])
                 workflow = {
                     "revision_id": id,

@@ -1,6 +1,9 @@
 import { createWorkflow } from "/assets/workflow.js";
 import { profileContains } from "/assets/sketch_hit.mjs";
 import { componentLibrary } from "/assets/component_library.js";
+import { drawingSections } from "/assets/drawing_sections.js";
+import { drawingRequest } from "/assets/drawing_request.js";
+let sectionUI;
 let workflow;
 let liveSequence = 0, liveLatest = null;
 function showLiveDesign() {
@@ -329,7 +332,7 @@ async function api(path, data, timeout = 90000) {
   } catch (e) {
     if (e.name === "AbortError")
       throw new Error(
-        "The CAD operation timed out. Your last saved version is unchanged.",
+        "The CAD request timed out; the server may still finish. Check saved versions before retrying an edit.",
       );
     throw e;
   } finally {
@@ -440,7 +443,7 @@ function renderTools() {
   $("#export-menu").innerHTML = exports
     .map(
       (f) =>
-        `<button data-export="${f}">${{ step: "Solid geometry", stl: "Assembled mesh", components: "Separate body meshes", json: "Portable project", svg: "Review drawing", pdf: "Drawing PDF", dxf: "Drawing DXF", csv: "Body list", bundle: "Design package", print: "Folding print pack" }[f]}<small>${["print","components"].includes(f)?"ZIP":f.toUpperCase()}</small></button>`,
+        `<button data-export="${f}">${{ step: "Solid geometry", stl: "Assembled mesh", components: "Separate body meshes", json: "Portable project", svg: "Review drawing", pdf: "Drawing PDF", dxf: "Drawing DXF", csv: "Body list", bundle: "Design package", print: "Print & assembly pack" }[f]}<small>${["print","components"].includes(f)?"ZIP":f.toUpperCase()}</small></button>`,
     )
     .join("");
   $$('[data-sketch-tool="rectangle"],[data-sketch-tool="circle"]').forEach(
@@ -690,15 +693,11 @@ async function commitDocument(label = "Design revision") {
   status("Rebuilding feature history…");
   try {
     const document = clone(state.document);
-    const preview = await api("/preview", { document });
-    state.previewResults = preview.feature_results;
-    if (preview.document_valid === false)
-      throw new Error(
-        preview.feature_results?.find((x) => x.status === "error")?.error ||
-          "Feature regeneration failed.",
-      );
+    // The save route validates native geometry before persistence and returns
+    // the checked snapshot. A successful edit needs one evaluated request.
     const result = await api("/documents", {
       document,
+      include_drawing:false,
       parent_id:
         (state.agentPreview ? state.agentBase?.id : state.snapshot?.id) ||
         undefined,
@@ -836,6 +835,7 @@ function updateDocumentUrl() {
   url.searchParams.delete("crate");
   url.searchParams.set("document", state.snapshot.id);
   url.searchParams.set("view", state.tab);
+  if(state.agentBase&&state.agentBase.id!==state.snapshot.id)url.searchParams.delete('checkpoint');
   history.replaceState(null, "", url.pathname + url.search);
 }
 
@@ -899,6 +899,7 @@ async function undoRedo(direction) {
   try {
     const result = await api("/" + direction, {
       current_id: state.snapshot.id,
+      include_drawing:false,
     });
     useSnapshot(result);
     await refreshHistory();
@@ -924,6 +925,8 @@ function setTab(tab) {
     x.classList.toggle("active", x.id === tab + "-tab"),
   );
   workflow?.tabChanged(tab);
+  if(tab==='drawing')renderDrawing();
+  if(tab==='canvas')ensureDrawing();
   if (tab === "model") resize3D();
   if (tab === "sketch") {
     if (state.snapshot.folding) $("#sketch-help").textContent="Nominal hinge-axis map. Edit the folding feature; physical panel and barrel outlines are in Drawing and Print pack.";
@@ -1682,6 +1685,7 @@ function renderAnnotations() {
   const sheet = $("#drawing-sheet");
   if (!sheet || !state.document) return;
   sheet.querySelector(".annotation-hit-layer")?.remove();
+  if(sectionUI?.active())return;
   const svg = sheet.querySelector("svg");
   if (!svg) return;
   const notes = state.document.annotations || [];
@@ -1792,13 +1796,27 @@ $("#annotation-save").addEventListener("click", async () => {
   );
 });
 
+const ensureDrawing=drawingRequest({getSnapshot:()=>state.snapshot,api,
+  onReady:snapshot=>{workflow?.update(snapshot);renderDrawing();},
+  onError:error=>{$('#drawing-sheet').textContent=error.message;toast(error.message,true);}});
 function renderDrawing() {
+  if(state.tab!=='drawing'){if(state.tab==='canvas')ensureDrawing();return;}
+  $("#drawing-layout").value=state.document?.metadata?.drawing_layout || (state.document?.annotations?.length?'legacy-v1':'aligned-v1');
+  if(sectionUI?.render())return;
   const svg = state.snapshot?.drawing_svg;
+  if(!svg&&state.snapshot?.drawing_pending){$('#drawing-sheet').textContent='Generating native vector drawing…';ensureDrawing();return;}
   $("#drawing-sheet").innerHTML =
     svg ||
     '<p class="tree-help">Save a valid solid design to generate its review drawing.</p>';
   renderAnnotations();
 }
+$("#drawing-layout").onchange=async event=>{
+  if(state.busy||state.inspectorDirty||state.agentPreview){renderDrawing();toast('Save or discard pending edits before changing the drawing layout.',true);return;}
+  state.document.metadata ||= {};
+  state.document.metadata.drawing_layout=event.target.value;
+  await commitDocument('Change drawing layout');
+  if(state.document.annotations?.length)toast('REF notes retain their sheet positions. Reposition them if needed.');
+};
 $("#annotation-delete").addEventListener("click", async () => {
   if (!editingAnnotation) return;
   state.document.annotations = state.document.annotations.filter(
@@ -1915,6 +1933,7 @@ async function sendAgent(regenerate = false, resumeFrom = null) {
       30000,
     );
     state.agentJob = job.id;
+    {const url=new URL(location.href);url.searchParams.delete('checkpoint');history.replaceState(null,'',url.pathname+url.search);}
     await pollAgent(job.id);
   } catch (e) {
     agentError(e);
@@ -1942,7 +1961,7 @@ function agentError(e) {
   });
 }
 async function pollAgent(id) {
-  const end = Date.now() + 150000;
+  const end = Date.now() + 45 * 60 * 1000;
   while (Date.now() < end) {
     const job = await api(
       "/jobs/" + encodeURIComponent(id),
@@ -1984,7 +2003,7 @@ async function pollAgent(id) {
     );
   }
   throw new Error(
-    "The request exceeded 150 seconds. Check its status to continue without another model call.",
+    "Status tracking timed out; the server may still be working. Check request status to reconnect without another model call.",
   );
 }
 function agentStillCurrent() {
@@ -2045,6 +2064,7 @@ function describeChange(change) {
 }
 
 function renderAgent(job) {
+  $('#agent-result').classList.remove('hidden');
   const p = job.proposal;
   if (!p) throw new Error("No proposal returned.");
   state.agentProposal = p;
@@ -2068,6 +2088,7 @@ function renderAgent(job) {
     $("#agent-result").insertBefore(review, $("#agent-result .agent-actions"));
   }
   if (p.status === "incomplete" && p.has_checkpoint) {
+    const url=new URL(location.href);url.searchParams.set('checkpoint',p.run_id);history.replaceState(null,'',url.pathname+url.search);
     const resume = document.createElement("button");
     resume.textContent = "Continue design";
     resume.addEventListener("click", () => {
@@ -2250,7 +2271,6 @@ document.addEventListener("click", async (e) => {
   const ex = target.closest("[data-export]");
   if (ex) {
     if (ex.dataset.export!=="print") exportDocument(ex.dataset.export);
-    else if (!state.snapshot.folding) toast("Choose Separate body meshes for individual STL parts. Folding print packs require a supported folding assembly.",true);
     else if (state.pending || state.inspectorDirty || state.agentPreview) toast("Save or discard parameter edits before preparing a print pack.",true);
     else {
       const p=state.document.metadata?.print_settings || {};
@@ -2262,7 +2282,7 @@ document.addEventListener("click", async (e) => {
   if (ver && !state.busy) {
     try {
       useSnapshot(
-        await api("/documents/" + encodeURIComponent(ver.dataset.version)),
+        await api("/documents/" + encodeURIComponent(ver.dataset.version)+'?include_drawing=false'),
       );
     } catch (error) {
       toast(error.message, true);
@@ -2460,7 +2480,7 @@ async function start() {
     const crate = query.get("crate"),
       documentId = query.get("document"),
       requestedView = query.get("view");
-    const bootstrapQuery = crate ? "?include_document=false" : documentId ? "?document_id=" + encodeURIComponent(documentId) : "";
+    const bootstrapQuery = crate ? "?include_document=false" : documentId ? "?document_id=" + encodeURIComponent(documentId)+'&include_drawing=false' : '?include_drawing=false';
     const b = await api("/bootstrap" + bootstrapQuery);
     state.capabilities = b.capabilities || { feature_types: [] };
     state.documents = b.documents || [];
@@ -2487,6 +2507,16 @@ async function start() {
       )
     )
       setTab(requestedView);
+    const checkpoint=query.get('checkpoint');
+    if(checkpoint&&state.snapshot?.id){
+      try{
+      const retained=await api('/checkpoints/'+encodeURIComponent(checkpoint)+'?document_id='+encodeURIComponent(state.snapshot.id));
+      state.agentBase=clone(state.snapshot);state.agentInstruction=retained.prompt;state.agentJob=null;
+      $('#agent-prompt').value=retained.prompt;$('#agent-mode').value='tools';
+      if(retained.selection?.feature_id)selectFeature(retained.selection.feature_id);
+      renderAgent({proposal:retained.proposal});
+      }catch(error){$('#agent-status').textContent='Checkpoint not reopened';$('#agent-result').textContent=error.message;toast(error.message,true);}
+    }
     resizeSketch();
   } catch (e) {
     await graphics;
@@ -2525,6 +2555,7 @@ workflow = createWorkflow({
     try {
       const result = await api("/documents", {
         document,
+        include_drawing:false,
         parent_id: parent,
         label,
       });
@@ -2544,4 +2575,5 @@ const openComponentLibrary=componentLibrary({$,esc,state,api,toast,useSnapshot,r
   onMesh:file=>{pendingMeshFile=file;pendingMeshComponent=true;$("#mesh-import-filename").textContent=file.name+" · confirm its original units";$("#mesh-import-dialog").showModal();}
 });
 $("#component-library").onclick=()=>openComponentLibrary().catch(e=>toast(e.message,true));
+sectionUI=drawingSections({$,esc,state,api,toast,clone,commitDocument,renderDrawing});
 start();

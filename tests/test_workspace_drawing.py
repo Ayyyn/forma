@@ -20,7 +20,102 @@ from crate_studio.workspace_drawing import (
 )
 
 
+class ProjectionReuseTests(unittest.TestCase):
+    def test_owned_geometry_reuses_curves_across_revision_labels_without_stale_text(
+        self,
+    ):
+        from unittest.mock import patch
+        from copy import deepcopy
+        from crate_studio import workspace_drawing as wd
+        from crate_studio.workspace_cache import cached_build, cache_clear
+        from crate_studio.workspace_geometry import build_document
+
+        cache_clear()
+        wd._owned_projections.clear()
+        doc = {
+            "name": "Projection control",
+            "features": [
+                {
+                    "id": "box",
+                    "type": "box",
+                    "params": {"width": 20, "depth": 12, "height": 4},
+                }
+            ],
+        }
+        native = cached_build(doc)
+        with patch.object(wd, "_project", wraps=wd._project) as work:
+            a = drawing_data(doc, native["parts"], {"revision_id": "cad-first"}, native)
+            b = drawing_data(
+                doc, native["parts"], {"revision_id": "cad-second"}, native
+            )
+            self.assertEqual(work.call_count, 4)
+            self.assertEqual(a["views"], b["views"])
+            self.assertEqual(a["isometric"], b["isometric"])
+            self.assertNotEqual(
+                a["drawing_context"]["revision_id"], b["drawing_context"]["revision_id"]
+            )
+            a["views"]["front"]["visible"].clear()
+            self.assertTrue(
+                drawing_data(doc, native["parts"], native_build=native)["views"][
+                    "front"
+                ]["visible"]
+            )
+            changed = deepcopy(doc)
+            changed["features"][0]["params"]["width"] = 24
+            rebuilt = cached_build(changed)
+            newer = drawing_data(changed, rebuilt["parts"], native_build=rebuilt)
+            self.assertEqual(newer["bbox_mm"]["size"][0], 24)
+            self.assertEqual(work.call_count, 8)
+            unowned = build_document(doc)
+            drawing_data(doc, unowned["parts"], native_build=unowned)
+            drawing_data(doc, unowned["parts"], native_build=unowned)
+            self.assertEqual(work.call_count, 16)
+
+
 class WorkspaceDrawingTests(unittest.TestCase):
+    def test_aligned_views_dimensions_and_revision_are_native_and_legacy_notes_stay_put(
+        self,
+    ):
+        doc = {
+            "name": "Aligned control",
+            "features": [],
+            "annotations": [],
+            "metadata": {},
+        }
+        context = {"revision_id": "cad-control-17", "pose": "Saved CAD pose"}
+        data = drawing_data(doc, self.parts(), context)
+        self.assertEqual(data["layout"], "aligned-v1")
+        self.assertEqual(
+            data["views"]["front"]["origin_px"][0], data["views"]["top"]["origin_px"][0]
+        )
+        self.assertEqual(
+            data["views"]["front"]["origin_px"][1],
+            data["views"]["right"]["origin_px"][1],
+        )
+        self.assertEqual(data["views"]["top"]["axis_names"], ("W", "D"))
+        self.assertEqual(data["views"]["right"]["axis_names"], ("D", "H"))
+        scene = _scene(data)
+        self.assertEqual(
+            len([item for item in scene if item.get("role") == "native-dimension"]), 6
+        )
+        self.assertEqual(
+            len([item for item in scene if item.get("role") == "dimension-arrow"]), 12
+        )
+        for item in scene:
+            if item.get("role") == "native-dimension":
+                a, b = item["points"]
+                self.assertAlmostEqual(
+                    math.dist(a, b) / data["sheet"]["logical_units_per_paper_mm"],
+                    item["value_mm"] * data["sheet"]["model_scale"],
+                )
+        svg = drawing_svg(doc, self.parts(), context)
+        self.assertIn("cad-control-17", svg)
+        self.assertIn("D 60", svg)
+        self.assertNotIn("Overall height: 60", svg)
+        old = drawing_data(self.document(), self.parts())
+        self.assertEqual(old["layout"], "legacy-v1")
+        self.assertEqual(old["annotations"][0]["x"], 60)
+
     def test_compact_parameter_appendix_preserves_every_value_and_long_rows(self):
         from crate_studio.workspace_drawing import _parameter_scenes
         from reportlab.pdfbase import pdfmetrics
@@ -198,9 +293,7 @@ class WorkspaceDrawingTests(unittest.TestCase):
         )
         for got, want in zip(data["bbox_mm"]["size"], [150, 80, 10]):
             self.assertAlmostEqual(got, want, places=6)
-        self.assertIn(
-            "Overall width: 150 mm", drawing_svg({"name": "Plate"}, [{"shape": shape}])
-        )
+        self.assertIn("W 150", drawing_svg({"name": "Plate"}, [{"shape": shape}]))
 
     def test_xml_text_is_escaped_and_source_is_not_mutated(self):
         doc = self.document()

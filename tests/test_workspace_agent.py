@@ -53,6 +53,29 @@ def response(p, rid="offline-fixture"):
 
 
 class WorkspaceAgentTests(unittest.TestCase):
+    def test_long_response_deadline_reaches_transport_and_invalid_values_do_not(self):
+        events = []
+        with (
+            patch.object(wa, "load_env"),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa, "request", return_value=response(plan())) as transport,
+        ):
+            wa.paid_chat(
+                {"max_tokens": 32768, "messages": []}, events.append, 1, timeout=600
+            )
+            self.assertEqual(transport.call_args.kwargs["timeout"], 600)
+            self.assertEqual(
+                [event["kind"] for event in events], ["reservation", "response"]
+            )
+            for invalid in (29, 601, True, 600.0):
+                with self.assertRaisesRegex(ValueError, "bounded provider timeout"):
+                    wa.paid_chat(
+                        {"max_tokens": 32768}, events.append, 2, timeout=invalid
+                    )
+            self.assertEqual(transport.call_count, 1)
+            self.assertEqual(len(events), 2)
+
     def test_new_prompt_design_retains_brief_without_overwriting_existing_intent(self):
         instruction = "make it 40 mm tall"
         operation = {
@@ -140,15 +163,13 @@ class WorkspaceAgentTests(unittest.TestCase):
     def call_mock(self, replies, prompt="make it 40 mm tall", document=None):
         root = Path(__file__).resolve().parents[1] / "output"
         with tempfile.TemporaryDirectory(dir=root) as directory:
-            with patch.object(wa, "RUNS", Path(directory)), patch.object(
-                wa, "load_env"
-            ), patch.dict(
-                os.environ, {"MODEL_API_KEY": "offline-test-secret"}
-            ), patch.object(
-                wa.agent, "estimated_spend", return_value=0
-            ), patch.object(
-                wa, "request", side_effect=replies
-            ) as transport:
+            with (
+                patch.object(wa, "RUNS", Path(directory)),
+                patch.object(wa, "load_env"),
+                patch.dict(os.environ, {"MODEL_API_KEY": "offline-test-secret"}),
+                patch.object(wa.agent, "estimated_spend", return_value=0),
+                patch.object(wa, "request", side_effect=replies) as transport,
+            ):
                 result = wa.propose_document(
                     document if document is not None else base(),
                     prompt,

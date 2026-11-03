@@ -1586,3 +1586,6 @@ dialog h2 {
 #component-file {margin-top:16px;white-space:normal;}
 #component-source {overflow-wrap:anywhere;}
 @media(max-width:650px){.component-layout{grid-template-columns:1fr}.component-layout aside{border:0;padding:0}#component-list{max-height:160px}}
+#section-dialog {width:min(440px,94vw);padding:24px;}
+#drawing-page {max-width:220px;padding:7px;border:1px solid #d5d2cb;border-radius:5px;background:#fffdf9;color:inherit;font:inherit;}
+.drawing-actions {flex-wrap:wrap;gap:6px;}

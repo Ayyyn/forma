@@ -30,8 +30,13 @@ TOOL_VERSION = hashlib.sha256(
             "floor_check.py",
             "workspace_agent.py",
             "workspace_drawing.py",
+            "drawing_layout.py",
+            "drawing_sections.py",
             "workspace_workflow.py",
             "component_library.py",
+            "assembly_study.py",
+            "retention_study.py",
+            "prismatic_controls.py",
         )
     )
     + Path(__file__).with_name("web").joinpath("vendor", "FormaSans.ttf").read_bytes()
@@ -63,6 +68,9 @@ def review_identity(document, asset_loader=None):
         for key, value in metadata.items()
         if key not in ("design_review", "native_study_review")
     }
+    source["metadata"].setdefault(
+        "drawing_layout", "legacy-v1" if source["annotations"] else "aligned-v1"
+    )
     source = deepcopy(source)
     from .folding import specification as fold_specification
 
@@ -130,11 +138,19 @@ def report_key(name, arguments):
         "check_folding": "motion",
         "render_views": "visual",
         "verify_exports": "exports",
+        "check_assembly": "assembly",
+        "check_retention": "retention",
+        "check_prismatic_controls": "prismatic_controls",
     }.get(name)
 
 
 def tool_definitions():
     rows = [
+        (
+            "check_assembly",
+            "Verify a staged rigid assembly from individually separated printed bodies to the exact original native pose or named design_mechanism target_state. spec={initial_placements:{body_id:{translation:[x,y,z],rotation:[rx,ry,rz]}},steps:[{name,placements:{body_id:{translation,rotation}}}],target_state:null|string,step_mm:1,step_deg:3}. ALL initial bodies must be explicitly positioned >=2 mm apart. Later omitted placements keep their previous pose. Rotations about original WORLD origin X then Y then Z, followed by translation mm; use inspected native body IDs. <=20 steps,24 bodies,2001 adaptive sampled poses. No arbitrary path solver or elastic snap fit. A rigid interference cannot be called tool-free assembly; revise actual CAD or state limitation. Retains a failed report and blocks finish until corrected.",
+            _object({**_CID, "spec": {"type": "object"}}),
+        ),
         (
             "search_components",
             "Search the curated source-pinned hardware/electronics library. Returns actual supported sizes and parameters. Geometry references only; no electrical simulation or supplier tolerance qualification.",
@@ -305,6 +321,16 @@ def tool_definitions():
             "mechanism_reference",
             "Read schema/conventions and limitations for a general rigid-body motion study.",
             _object({}),
+        ),
+        (
+            "check_retention",
+            "Release virtual constraints and probe each requested part in six world directions at named states. spec={part_ids:[body IDs],state_names:[names],distance_mm:6,samples:41}; spec:{} uses saved native_study_targets.retention. A clear escape disproves capture. Passing straight translations does not prove rotational/global captivity or physical fit. For permanent parts check unlocked AND locked sizes, not only their sliding axis.",
+            _object({**_CID, "spec": {"type": "object"}}),
+        ),
+        (
+            "check_prismatic_controls",
+            "Matched lock/unlock/end-stop controls with virtual constraints released. spec:{modes:[{joint_ids:[prismatic IDs],joint_limits:{id:[min,max]},state_pairs:[{locked:name,unlocked:name,position:[joint values]}],distance_mm:1,samples:21}]}; spec:{} uses native_study_targets.prismatic_controls. Descendants move together. Locked travel must obstruct, legal unlocked travel clear, and outside-limit unlocked travel meet a real stop within the probe distance. Retained limits/positions cannot be weakened. No friction/force qualification.",
+            _object({**_CID, "spec": {"type": "object"}}),
         ),
         (
             "check_folding",
@@ -490,6 +516,45 @@ class DesignSession:
                         "Run check_motion on this exact candidate before using mechanism_spec:{}"
                     )
                 arguments = {**arguments, "mechanism_spec": deepcopy(recorded)}
+            if name == "check_retention" and arguments.get("spec") == {}:
+                contract = (
+                    self._candidate(referenced)["document"]
+                    .get("metadata", {})
+                    .get("native_study_targets", {})
+                    .get("retention")
+                )
+                if contract is None:
+                    raise ValueError(
+                        "No saved retention targets; provide an explicit bounded spec"
+                    )
+                arguments = {**arguments, "spec": deepcopy(contract)}
+            if name == "check_prismatic_controls" and arguments.get("spec") == {}:
+                contract = (
+                    self._candidate(referenced)["document"]
+                    .get("metadata", {})
+                    .get("native_study_targets", {})
+                    .get("prismatic_controls")
+                )
+                if contract is None:
+                    raise ValueError(
+                        "No retained prismatic controls; provide spec:{modes:[...]}"
+                    )
+                arguments = {**arguments, "spec": {"modes": deepcopy(contract)}}
+            if name in ("check_retention", "check_prismatic_controls") or (
+                name == "check_assembly"
+                and isinstance(arguments.get("spec"), dict)
+                and arguments["spec"].get("target_state") is not None
+            ):
+                mechanism = (
+                    self.reports.get(referenced, {}).get("motion", {}).get("spec")
+                )
+                if mechanism is None:
+                    mechanism = (
+                        self._candidate(referenced)["document"]
+                        .get("metadata", {})
+                        .get("design_mechanism")
+                    )
+                arguments = {**arguments, "_target_mechanism": deepcopy(mechanism)}
             key = hashlib.sha256(
                 json.dumps(
                     [TOOL_VERSION, name, arguments, assets],
@@ -505,6 +570,10 @@ class DesignSession:
                     self.reports.setdefault(referenced, {})[key_for_report] = deepcopy(
                         self.cached_reports[key]
                     )
+                    if name == "check_assembly":
+                        self._candidate(referenced)["document"].setdefault(
+                            "metadata", {}
+                        )["assembly_plan"] = deepcopy(self.cached_reports[key]["spec"])
             else:
                 key_for_report = report_key(name, arguments)
                 if key_for_report:
@@ -691,7 +760,9 @@ class DesignSession:
                             "id": feature_id,
                             "catalog_id": record["catalog_id"],
                             "parameters": record["parameters"],
-                            "summary": ("Edit" if a["feature_id"] else "Insert") + " library component · " + record["name"],
+                            "summary": ("Edit" if a["feature_id"] else "Insert")
+                            + " library component · "
+                            + record["name"],
                         }
                     ],
                 }
@@ -739,6 +810,160 @@ class DesignSession:
         doc = candidate["document"]
         built = self._build(ident)
         reports = self.reports.setdefault(ident, {})
+        if name == "check_assembly":
+            from .assembly_study import assembly_study
+
+            checked_doc = doc
+            if "_target_mechanism" in a:
+                checked_doc = deepcopy(doc)
+                checked_doc.setdefault("metadata", {})["design_mechanism"] = deepcopy(
+                    a["_target_mechanism"]
+                )
+            value = assembly_study(checked_doc, built, a["spec"])
+            doc.setdefault("metadata", {})["assembly_plan"] = deepcopy(value["spec"])
+            self._write_json(ident, "assembly.json", value)
+            evidence_name = (
+                "assembly-"
+                + hashlib.sha256(
+                    json.dumps(
+                        [
+                            TOOL_VERSION,
+                            value["geometry_signature"],
+                            value["spec"],
+                            value["target_pose_matrices"],
+                        ],
+                        sort_keys=True,
+                    ).encode()
+                ).hexdigest()[:16]
+                + ".json"
+            )
+            self._write_json(ident, evidence_name, value)
+            reports["assembly"] = {
+                key: val for key, val in value.items() if key != "frames"
+            }
+            failures = [frame for frame in value["frames"] if frame["overlaps"]]
+            summaries = {}
+            for frame in failures:
+                row = summaries.setdefault(
+                    frame["step"],
+                    {
+                        "step": frame["step"],
+                        "samples": 0,
+                        "first_fraction": frame["fraction"],
+                        "last_fraction": frame["fraction"],
+                        "part_pairs": set(),
+                        "max_volume_mm3": 0.0,
+                    },
+                )
+                row["samples"] += 1
+                row["last_fraction"] = frame["fraction"]
+                for overlap in frame["overlaps"]:
+                    row["part_pairs"].add(tuple(overlap["parts"]))
+                    row["max_volume_mm3"] = max(
+                        row["max_volume_mm3"], overlap["volume_mm3"]
+                    )
+            summary = [
+                {**row, "part_pairs": sorted(row["part_pairs"])}
+                for row in summaries.values()
+            ]
+            failure_image = None
+            if failures:
+                from .mechanism_study import moved_parts
+                import numpy as np
+                import cadquery as cq
+
+                frame = failures[0]
+                selected = set(frame["overlaps"][0]["parts"])
+                matrices = {
+                    key: np.asarray(v) for key, v in frame["pose_matrices"].items()
+                }
+                posed = moved_parts(
+                    [p for p in built["parts"] if p["id"] in selected], matrices
+                )
+                meshes = []
+                for mesh in built["mesh"]:
+                    if mesh["id"] not in selected:
+                        continue
+                    transform = matrices[mesh["id"]]
+                    points = (
+                        np.asarray(mesh["vertices"]).reshape(-1, 3)
+                        @ transform[:3, :3].T
+                        + transform[:3, 3]
+                    )
+                    meshes.append({**mesh, "vertices": points.reshape(-1).tolist()})
+                bounds = _bounds(cq.Compound.makeCompound([p["shape"] for p in posed]))
+                stem = (
+                    "assembly-failure-"
+                    + hashlib.sha256(
+                        json.dumps(value["spec"], sort_keys=True).encode()
+                    ).hexdigest()[:12]
+                )
+                diagnostic = self._render(
+                    ident,
+                    {"mesh": meshes, "metrics": {"bounds_mm": bounds}},
+                    stem=stem,
+                    report_name="visual:assembly_failure",
+                    heading=f"FIRST ASSEMBLY COLLISION / {frame['step']} / {' + '.join(sorted(selected))}",
+                )
+                diagnostic.pop("image_delivered_to_model", None)
+                diagnostic.update(
+                    diagnostic_only=True,
+                    scope="Failed installation diagnostic, not a successful design review. Transport delivery is recorded in model request receipts.",
+                )
+                failure_image = diagnostic["artifact"]
+            else:
+                reports.pop("visual:assembly_failure", None)
+            return {
+                **reports["assembly"],
+                "collision_summary": summary,
+                "failure_image_artifact": failure_image,
+                "failed_frames": [
+                    frame for frame in value["frames"] if frame["overlaps"]
+                ][:3],
+                "evidence": f"{ident}/{evidence_name}",
+            }
+        if name == "check_retention":
+            from .retention_study import retention_study
+
+            value = retention_study(doc, built, a["spec"], a.get("_target_mechanism"))
+            self._write_json(ident, "retention.json", value)
+            reports["retention"] = deepcopy(value)
+
+            def compact(row):
+                return {
+                    k: row[k]
+                    for k in (
+                        "moving_part_ids",
+                        "state_name",
+                        "direction_world",
+                        "first_blocked_sample_mm",
+                        "initial_pose_clear",
+                        "path_clear_at_samples",
+                    )
+                }
+
+            return {
+                k: v
+                for k, v in value.items()
+                if k not in ("cases", "escapes", "mechanism_spec")
+            } | {
+                "escape_count": len(value["escapes"]),
+                "escapes": [compact(row) for row in value["escapes"][:24]],
+                "evidence": f"{ident}/retention.json",
+            }
+        if name == "check_prismatic_controls":
+            from .prismatic_controls import prismatic_controls
+
+            if not isinstance(a["spec"], dict) or set(a["spec"]) != {"modes"}:
+                raise ValueError("Use spec:{modes:[...]} or the retained spec:{}")
+            value = prismatic_controls(
+                doc, built, a["spec"]["modes"], a.get("_target_mechanism")
+            )
+            self._write_json(ident, "prismatic-controls.json", value)
+            reports["prismatic_controls"] = deepcopy(value)
+            return {
+                k: v for k, v in value.items() if k not in ("cases", "mechanism_spec")
+            } | {"evidence": f"{ident}/prismatic-controls.json"}
         if name == "inspect_project":
             return {
                 "candidate_id": ident,
@@ -1003,8 +1228,54 @@ class DesignSession:
                     raise ValueError(
                         f"Run and pass {gate} before selecting this candidate"
                     )
+            if doc.get("metadata", {}).get("assembly_plan") and not reports.get(
+                "assembly", {}
+            ).get("passed"):
+                raise ValueError(
+                    "Run and pass check_assembly on this exact candidate before selecting; inherited assembly plans are not fresh proof"
+                )
             if "motion" in reports and not reports["motion"]["passed"]:
                 raise ValueError("Selected candidate has a failed motion study")
+            retention = (
+                doc.get("metadata", {}).get("native_study_targets", {}).get("retention")
+            )
+            if retention is not None:
+                checked = reports.get("retention", {})
+                from .retention_study import specification as retention_spec
+
+                motion = reports.get("motion", {}).get("spec", {})
+                expected = retention_spec(
+                    retention,
+                    [p["id"] for p in built["parts"]],
+                    [s["name"] for s in motion.get("states", [])],
+                )
+                if (
+                    not checked.get("passed")
+                    or checked.get("spec") != expected
+                    or checked.get("mechanism_spec") != motion
+                ):
+                    raise ValueError(
+                        "Run and pass check_retention for ALL retained parts/states using the current checked motion spec; inherited or weaker probes are not proof"
+                    )
+            modes = (
+                doc.get("metadata", {})
+                .get("native_study_targets", {})
+                .get("prismatic_controls")
+            )
+            if modes is not None:
+                from .prismatic_controls import specification as controls_spec
+
+                checked = reports.get("prismatic_controls", {})
+                motion = reports.get("motion", {}).get("spec", {})
+                expected = controls_spec(modes, motion)
+                if (
+                    not checked.get("passed")
+                    or checked.get("spec") != expected
+                    or checked.get("mechanism_spec") != motion
+                ):
+                    raise ValueError(
+                        "Run and pass check_prismatic_controls for ALL retained modes/states with the current checked motion spec"
+                    )
             for key, value in reports.items():
                 if not key.startswith("floor:"):
                     continue
@@ -1017,9 +1288,12 @@ class DesignSession:
                         raise ValueError(
                             "Named-state floor coverage requires a passing general motion study"
                         )
-                    without_samples = lambda spec: {
-                        k: v for k, v in spec.items() if k != "samples_per_segment"
-                    }
+
+                    def without_samples(spec):
+                        return {
+                            k: v for k, v in spec.items() if k != "samples_per_segment"
+                        }
+
                     if without_samples(value["mechanism_spec"]) != without_samples(
                         reports["motion"]["spec"]
                     ):

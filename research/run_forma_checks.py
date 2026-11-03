@@ -4,6 +4,15 @@ import subprocess
 import sys
 
 MODULES = (
+    "test_assembly_study",
+    "test_design_batching",
+    "test_drawing_sections",
+    "test_mechanical_print",
+    "test_retention_study",
+    "test_prismatic_controls",
+    "test_lazy_drawing",
+    "test_checkpoint_recovery",
+    "test_export_cache_identity",
     "test_budget",
     "test_component_library",
     "test_crate_agent",
@@ -41,5 +50,5 @@ if __name__ == "__main__":
         ]
     )
     if result == 0:
-        result = subprocess.call(["node", "--test", "tests/test_motion_video.mjs"])
+        result = subprocess.call(["node", "--test", "tests/test_motion_video.mjs", "tests/test_lazy_drawing.mjs"])
     raise SystemExit(result)

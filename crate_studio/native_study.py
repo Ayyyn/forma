@@ -77,6 +77,11 @@ def recheck(document, folder, asset_loader=None, geometry_lock=None):
     results["interference"] = session.call(
         "check_interference", {"candidate_id": "base"}
     )
+    if document.get("metadata", {}).get("assembly_plan"):
+        results["assembly"] = session.call(
+            "check_assembly",
+            {"candidate_id": "base", "spec": document["metadata"]["assembly_plan"]},
+        )
     for name, footprint in targets.items():
         results["floor:state:" + name] = session.call(
             "check_floor",
@@ -90,6 +95,22 @@ def recheck(document, folder, asset_loader=None, geometry_lock=None):
     results["motion"] = session.call(
         "check_motion", {"candidate_id": "base", "spec": spec}
     )
+    if (
+        document.get("metadata", {}).get("native_study_targets", {}).get("retention")
+        is not None
+    ):
+        results["retention"] = session.call(
+            "check_retention", {"candidate_id": "base", "spec": {}}
+        )
+    if (
+        document.get("metadata", {})
+        .get("native_study_targets", {})
+        .get("prismatic_controls")
+        is not None
+    ):
+        results["prismatic_controls"] = session.call(
+            "check_prismatic_controls", {"candidate_id": "base", "spec": {}}
+        )
     results["exports"] = session.call("verify_exports", {"candidate_id": "base"})
     passed = all(r.get("ok") and r.get("passed") for r in results.values())
     reports = deepcopy(session.reports.get("base", {}))
@@ -114,7 +135,7 @@ def recheck(document, folder, asset_loader=None, geometry_lock=None):
             for name, r in results.items()
             if not r.get("ok") or not r.get("passed")
         },
-        "scope": "Rechecks the existing explicit floor targets, declared finite-solid sampled motion, source interference and strict assembled/component exports. Does not infer new requirements, change targets or geometry, refresh model visual judgement, or qualify manufactured retention, locks, loads or print fit.",
+        "scope": "Rechecks existing explicit floor targets, declared finite-solid sampled motion, retained assembly plan if present, source interference and strict assembled/component exports. Does not infer new requirements, change targets or geometry, refresh model visual judgement, or qualify manufactured retention, locks, loads or print fit.",
     }
     # Reject any accidental source/target drift during the operation.
     if identity != study_identity(document, asset_loader)[0]:

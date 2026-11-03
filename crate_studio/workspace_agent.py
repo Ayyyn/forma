@@ -13,7 +13,6 @@ import uuid
 
 from scripts.api_preflight import load_env, request
 from . import agent
-from .workspace_geometry import build_document
 from .workspace_cache import cached_build
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -471,7 +470,7 @@ def _model_document(value):
 def paid_chat(payload, log, attempt, timeout=120):
     """One receipted chat request shared by bounded and tool-driven planners."""
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
-    if type(timeout) is not int or not 30 <= timeout <= 300:
+    if type(timeout) is not int or not 30 <= timeout <= 600:
         raise ValueError("Invalid bounded provider timeout")
     if len(encoded) > 2500000:
         raise ValueError("Model context exceeds the bounded input limit")

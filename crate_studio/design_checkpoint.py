@@ -12,7 +12,48 @@ import re
 from . import workspace_agent as wa
 
 
-def restore(session, source_id, selection, log, depth=0):
+def _canonical_project(document):
+    value = wa._model_document(deepcopy(document))
+    value.setdefault("metadata", {}).setdefault(
+        "drawing_layout", "legacy-v1" if value.get("annotations") else "aligned-v1"
+    )
+    return value
+
+
+def retained_context(source_id, depth=0):
+    """Find original context even if a continuation failed before its first call."""
+    if (
+        depth >= 8
+        or not isinstance(source_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", source_id)
+    ):
+        raise ValueError("Invalid checkpoint ancestry")
+    folder = wa.RUNS / source_id
+    prior = json.loads((folder / "proposal.json").read_text(encoding="utf-8"))
+    if prior.get("status") != "incomplete":
+        raise ValueError("Only an incomplete design run can be resumed")
+    events = [
+        json.loads(line)
+        for line in (folder / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    for event in events:
+        if event.get("kind") != "reservation":
+            continue
+        for message in event["request"]["messages"]:
+            value = message.get("content")
+            if (
+                message.get("role") == "user"
+                and isinstance(value, str)
+                and '"original_instruction"' in value
+            ):
+                return json.loads(value)
+    ancestor = (prior.get("continuation") or {}).get("source_run_id")
+    if ancestor and not any(e.get("kind") == "tool" for e in events):
+        return retained_context(ancestor, depth + 1)
+    raise ValueError("Checkpoint has no original design context")
+
+
+def restore(session, source_id, selection, log, depth=0, on_event=None):
     if depth >= 8:
         raise ValueError("Checkpoint ancestry exceeds eight continuations")
     if not isinstance(source_id, str) or not re.fullmatch(
@@ -29,6 +70,21 @@ def restore(session, source_id, selection, log, depth=0):
     ]
     requests = [e for e in events if e.get("kind") == "reservation"]
     if not requests:
+        ancestor = (prior.get("continuation") or {}).get("source_run_id")
+        if ancestor and not any(e.get("kind") == "tool" for e in events):
+            history, pending, provenance = restore(
+                session, ancestor, selection, log, depth + 1, on_event
+            )
+            return (
+                history,
+                pending,
+                {
+                    **provenance,
+                    "source_run_id": source_id,
+                    "recovered_request_run_id": ancestor,
+                    "recovery": "Continuation failed before a model request; original ancestor revalidated",
+                },
+            )
         raise ValueError("Checkpoint has no retained model request")
     first = requests[0]["request"]["messages"]
     context = json.loads(
@@ -40,38 +96,65 @@ def restore(session, source_id, selection, log, depth=0):
             and '"original_instruction"' in m["content"]
         )
     )
-    clean_selection = lambda value: {
-        k: v for k, v in (value or {}).items() if v not in (None, [], {})
-    }
+
+    def clean_selection(value):
+        return {k: v for k, v in (value or {}).items() if v not in (None, [], {})}
+
     if (
         context["original_instruction"] != session.instruction
-        or context["project"]
-        != wa._model_document(session.candidates["base"]["document"])
+        or _canonical_project(context["project"])
+        != _canonical_project(session.candidates["base"]["document"])
         or clean_selection(context.get("selection")) != clean_selection(selection)
     ):
         raise ValueError(
             "Checkpoint belongs to a different source, instruction or selection; request a new design"
         )
+    # Preserve original candidate IDs while allowing the equivalent explicit
+    # drawing-layout default introduced by the document reader. Every geometric
+    # and other source field still has to match before this one-field migration.
+    base = session.candidates["base"]["document"]
+    if "drawing_layout" not in context["project"].get(
+        "metadata", {}
+    ) and "drawing_layout" in base.get("metadata", {}):
+        base["metadata"].pop("drawing_layout")
+        log(
+            {
+                "kind": "checkpoint_schema_migration",
+                "field": "metadata.drawing_layout",
+                "detail": "Equivalent default restored to original representation for candidate identity",
+                "budget_charge_usd": 0,
+            }
+        )
     replayed = getattr(session, "checkpoint_results", {})
     last_render = None
     floor_images = {}
     state_images = {}
+    assembly_failure = None
     # A continued checkpoint can itself be continued without charging for or
     # pretending to regenerate the model decisions in its ancestors.
     ancestor = (prior.get("continuation") or {}).get("source_run_id")
     if ancestor:
-        restore(session, ancestor, selection, log, depth + 1)
+        restore(session, ancestor, selection, log, depth + 1, on_event)
         replayed = session.checkpoint_results
         last_render = getattr(session, "checkpoint_last_render", None)
         floor_images = getattr(session, "checkpoint_floor_images", {})
         state_images = getattr(session, "checkpoint_state_images", {})
+        assembly_failure = getattr(session, "checkpoint_assembly_failure", None)
+    tool_events = [e for e in events if e.get("kind") == "tool"]
+    replay_index = 0
     for event in events:
         if event.get("kind") != "tool":
             continue
+        replay_index += 1
+        if on_event:
+            on_event(
+                "revalidation",
+                f"Rechecking retained tools {replay_index}/{len(tool_events)} · {event['tool']} · no model call",
+            )
         result = session.call(event["tool"], event["arguments"])
-        if event["tool"] in ("draft_candidate", "insert_component") and event.get("result", {}).get(
-            "candidate_id"
-        ) != result.get("candidate_id"):
+        if event["tool"] in ("draft_candidate", "insert_component") and event.get(
+            "result", {}
+        ).get("candidate_id") != result.get("candidate_id"):
             raise ValueError(
                 "Candidate identity changed during replay; start a new proposal instead of silently remapping bodies"
             )
@@ -98,6 +181,12 @@ def restore(session, source_id, selection, log, depth=0):
         if event["tool"] == "render_state" and result.get("ok"):
             state_images[(event["arguments"]["candidate_id"], result["state_name"])] = (
                 result
+            )
+        if event["tool"] == "check_assembly" and result.get("ok"):
+            assembly_failure = (
+                (event["arguments"]["candidate_id"], result)
+                if result.get("failure_image_artifact")
+                else None
             )
     last_request = requests[-1]
     history = deepcopy(last_request["request"]["messages"])
@@ -228,6 +317,29 @@ def restore(session, source_id, selection, log, depth=0):
         )
     if state_views:
         history.append({"role": "user", "content": state_views})
+    if assembly_failure:
+        ident, result = assembly_failure
+        image = (session.folder / result["failure_image_artifact"]).read_bytes()
+        history.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Revalidated first assembly-collision diagnostic for "
+                        + ident
+                        + ". Only the actual colliding pair is shown. This is a failed installation, not an accepted-design visual review.",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,"
+                            + base64.b64encode(image).decode()
+                        },
+                    },
+                ],
+            }
+        )
     history.append(
         {
             "role": "user",
@@ -244,4 +356,5 @@ def restore(session, source_id, selection, log, depth=0):
     session.checkpoint_last_render = last_render
     session.checkpoint_floor_images = floor_images
     session.checkpoint_state_images = state_images
+    session.checkpoint_assembly_failure = assembly_failure
     return history, pending, provenance

@@ -612,12 +612,24 @@ class DesignAgentTests(unittest.TestCase):
                     run_id="checkpoint-wrong",
                     resume_from="checkpoint-first",
                 )
+            failed = Path(directory) / "checkpoint-pre-request-failure"
+            failed.mkdir()
+            (failed / "proposal.json").write_text(
+                json.dumps(
+                    {
+                        "status": "incomplete",
+                        "continuation": {"source_run_id": "checkpoint-first"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (failed / "events.jsonl").write_text("", encoding="utf-8")
             second = da.propose_design(
-                doc,
+                {**doc, "metadata": {"drawing_layout": "aligned-v1"}},
                 BRIEF,
                 run_id="checkpoint-second",
                 max_turns=2,
-                resume_from="checkpoint-first",
+                resume_from="checkpoint-pre-request-failure",
             )
             self.assertEqual(second["status"], "ready")
             self.assertEqual(second["calls"], 1)
@@ -626,6 +638,9 @@ class DesignAgentTests(unittest.TestCase):
                 second["continuation"]["source_response_ids"], first["response_ids"]
             )
             self.assertEqual(second["new_tool_calls"], 1)
+            self.assertEqual(
+                second["continuation"]["recovered_request_run_id"], "checkpoint-first"
+            )
             self.assertGreater(second["checkpoint_revalidation_s"], 0)
             self.assertGreaterEqual(
                 second["elapsed_s"], second["checkpoint_revalidation_s"]

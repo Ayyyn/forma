@@ -152,6 +152,26 @@ def wall_frame(definitions, angle_deg):
 def motion_study(document, config=None, asset_loader=None):
     from .folding_study import folding_feature, folding_study
 
+    if config and config.get("family") == "assembly":
+        from .assembly_study import assembly_study
+        from .workspace_cache import cached_build
+
+        if set(config) != {"family"}:
+            raise ValueError("Assembly sampling is controlled by the saved assembly plan")
+        plan = document.get("metadata", {}).get("assembly_plan")
+        if not plan:
+            raise ValueError("No checked assembly plan has been saved for this design")
+        built = cached_build(document, asset_loader)
+        result = assembly_study(document, built, plan)
+        result.update(
+            family="general_mechanism", study_kind="assembly", assembly_plan=result["spec"],
+            spec={"states": [{"name": "Separated parts"}, *[{"name": step["name"]} for step in result["spec"]["steps"]]]},
+            parts=deepcopy(built["mesh"]),
+            config={"family":"assembly","progress_max":100,"samples":result["sample_count"]},
+            sampled_overlap_free=not result["collision_sample_count"],
+        )
+        return result
+
     if document.get("metadata", {}).get("design_mechanism"):
         from .mechanism_study import mechanism_study
         from .workspace_cache import cached_build

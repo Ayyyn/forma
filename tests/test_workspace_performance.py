@@ -16,6 +16,76 @@ from tests.test_workspace_agent import base, plan, response
 
 
 class ExactReuseTests(unittest.TestCase):
+    def test_saved_revision_snapshot_is_exact_copied_and_asset_bound(self):
+        from crate_studio import workspace_server as ws
+
+        class LockGuard:
+            blocked = False
+
+            def __enter__(self):
+                if self.blocked:
+                    raise AssertionError(
+                        "Warm saved revisions must not enter the CAD lock"
+                    )
+
+            def __exit__(self, *args):
+                return False
+
+        lock = LockGuard()
+        ws._revision_snapshot.cache_clear()
+        document = ws.normalize_document(
+            {
+                "name": "Revision cache control",
+                "features": [
+                    {
+                        "id": "box",
+                        "type": "box",
+                        "params": {"width": 10, "depth": 20, "height": 30},
+                    }
+                ],
+            }
+        )
+        with patch.object(ws, "snapshot", wraps=ws.snapshot) as native:
+            first = ws.revision_snapshot(document, "cad-cache-control", lock)
+            first["document"]["name"] = "Mutated caller"
+            lock.blocked = True
+            second = ws.revision_snapshot(document, "cad-cache-control", lock)
+            self.assertNotEqual(second["document"]["name"], "Mutated caller")
+            self.assertEqual(native.call_count, 1)
+            lock.blocked = False
+            document["metadata"]["drawing_layout"] = "legacy-v1"
+            ws.revision_snapshot(document, "cad-cache-control", lock)
+            self.assertEqual(native.call_count, 2)
+        self.assertEqual(ws._revision_snapshot.cache_info().hits, 1)
+        with tempfile.TemporaryDirectory(dir="output") as folder:
+            asset = Path(folder) / "shape.step"
+            document = ws.normalize_document(
+                {
+                    "name": "Asset cache control",
+                    "features": [
+                        {
+                            "id": "import",
+                            "type": "import_step",
+                            "params": {"asset_id": "unchanged-id"},
+                        }
+                    ],
+                }
+            )
+            sizes = []
+            with (
+                patch.object(ws, "asset_path", return_value=asset),
+                patch.object(ws, "snapshot", wraps=ws.snapshot) as native,
+            ):
+                for width in (8, 12):
+                    cq.exporters.export(cq.Workplane("XY").box(width, 4, 2), str(asset))
+                    sizes.append(
+                        ws.revision_snapshot(document, "cad-asset-control", lock)[
+                            "metrics"
+                        ]["size_mm"][0]
+                    )
+                self.assertEqual(native.call_count, 2)
+            self.assertEqual(sizes, [8.0, 12.0])
+
     def test_bootstrap_loads_requested_document_once_and_metadata_skips_geometry(self):
         from crate_studio import workspace_server as ws
         from fastapi import HTTPException
@@ -25,14 +95,15 @@ class ExactReuseTests(unittest.TestCase):
         }
         bootstrap = routes["/api/studio/bootstrap"]
         target = {"id": "requested", "geometry": "retained snapshot"}
-        with patch.object(
-            ws,
-            "current_document",
-            side_effect=AssertionError("Unrelated default must not load"),
-        ), patch.object(ws, "read_document", return_value=target) as read, patch.object(
-            ws, "list_documents", return_value=[]
-        ), patch.object(
-            wa.agent, "configured", return_value=True
+        with (
+            patch.object(
+                ws,
+                "current_document",
+                side_effect=AssertionError("Unrelated default must not load"),
+            ),
+            patch.object(ws, "read_document", return_value=target) as read,
+            patch.object(ws, "list_documents", return_value=[]),
+            patch.object(wa.agent, "configured", return_value=True),
         ):
             self.assertEqual(bootstrap(document_id="requested")["document"], target)
             read.assert_called_once()
@@ -66,15 +137,15 @@ class ExactReuseTests(unittest.TestCase):
             with patch.object(ws, "asset_path", return_value=asset):
                 cq.exporters.export(cq.Workplane("XY").box(10, 8, 2), str(asset))
                 old_key = ws.drawing_key(doc)
-                self.assertIn("Overall width: 10 mm", ws.projected(legacy_key))
+                self.assertIn("W 10", ws.projected(legacy_key))
                 cq.exporters.export(cq.Workplane("XY").box(20, 8, 2), str(asset))
                 self.assertNotEqual(ws.drawing_key(doc), old_key)
                 value = ws.snapshot(doc, threading.RLock())
                 self.assertEqual(value["metrics"]["size_mm"][0], 20)
-                self.assertIn("Overall width: 20 mm", value["drawing_svg"])
+                self.assertIn("W 20", value["drawing_svg"])
                 # Control: omitting content identity really does preserve the
                 # stale projection despite the native imported body changing.
-                self.assertIn("Overall width: 10 mm", ws.projected(legacy_key))
+                self.assertIn("W 10", ws.projected(legacy_key))
 
     def setUp(self):
         gc.cache_clear()
@@ -113,15 +184,14 @@ class ExactReuseTests(unittest.TestCase):
 
     def test_exact_proposal_cache_and_all_key_dependencies(self):
         p = plan([{"action": "update", "id": "box", "params": {"height": 40}}])
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-only"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", return_value=response(p)
-        ) as transport:
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-only"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", return_value=response(p)) as transport,
+        ):
             a = wa.propose_document(base(), "make it 40 mm tall", run_id="a")
             b = wa.propose_document(base(), "make it 40 mm tall", run_id="b")
             self.assertEqual(transport.call_count, 1)
@@ -157,17 +227,15 @@ class ExactReuseTests(unittest.TestCase):
                 plan([{"action": "update", "id": "box", "params": {"height": 40}}])
             )
 
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-only"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", side_effect=reply
-        ) as transport, ThreadPoolExecutor(
-            max_workers=2
-        ) as pool:
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-only"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", side_effect=reply) as transport,
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
             a = pool.submit(
                 wa.propose_document, base(), "make it 40 mm tall", run_id="a"
             )
@@ -185,14 +253,13 @@ class ExactReuseTests(unittest.TestCase):
             plan([{"action": "update", "id": "box", "params": {"height": 40}}])
         )
         reply[0]["usage"]["prompt_tokens_details"] = {"cached_tokens": 80}
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-only"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", return_value=reply
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-only"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", return_value=reply),
         ):
             result = wa.propose_document(
                 base(), "make it 40 mm tall", run_id="cached-provider"
@@ -213,15 +280,14 @@ class ExactReuseTests(unittest.TestCase):
 
     def test_compact_faces_roundtrip_and_focused_selection_not_lost(self):
         p = plan([{"action": "update", "id": "box", "params": {"height": 40}}])
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-only"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", return_value=response(p)
-        ) as transport:
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-only"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", return_value=response(p)) as transport,
+        ):
             selected = {"topology_ids": ["body_001:face_0005"]}
             for mode in ["full", "compact", "focused"]:
                 wa.propose_document(
@@ -271,15 +337,14 @@ class ExactReuseTests(unittest.TestCase):
             )
             return result
 
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            ws, "DATA", Path(directory)
-        ), patch.object(ws, "DOCS", Path(directory) / "documents"), patch.object(
-            ws, "JOBS", {}
-        ), patch.object(
-            wa.agent, "configured", return_value=True
-        ), patch.object(
-            wa, "propose_document", side_effect=propose
-        ) as model:
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(ws, "DATA", Path(directory)),
+            patch.object(ws, "DOCS", Path(directory) / "documents"),
+            patch.object(ws, "JOBS", {}),
+            patch.object(wa.agent, "configured", return_value=True),
+            patch.object(wa, "propose_document", side_effect=propose) as model,
+        ):
             routes = {
                 route.path: route.endpoint
                 for route in ws.create_router(threading.RLock()).routes

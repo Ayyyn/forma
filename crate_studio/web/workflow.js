@@ -4,7 +4,7 @@ import { recordCanvasVideo, videoFramePlan, motionSettingsCurrent } from "/asset
 
 const $ = (s) => document.querySelector(s);
 const copy = (x) => JSON.parse(JSON.stringify(x));
-const motionSignature = (value) => JSON.stringify([value.geometry_signature, value.document.metadata?.design_mechanism || null]);
+const motionSignature = (value) => JSON.stringify([value.geometry_signature, value.document.metadata?.design_mechanism || null, value.document.metadata?.assembly_plan || null]);
 const escape = (x) =>
   String(x ?? "").replace(
     /[&<>"']/g,
@@ -84,6 +84,7 @@ export function createWorkflow(bridge) {
   $("#motion-tab").innerHTML =
     `<div class="motion-layout"><div class="motion-heading"><div><small>FINITE-THICKNESS MOTION</small><h1>Wall folding</h1><p id="motion-state">Build an open enclosure in Project to begin.</p></div><div class="motion-heading-actions"><button id="motion-focus">Focus view</button><button id="motion-run" class="primary">Run motion study</button></div></div><div class="motion-settings"><label>Maximum angle <input id="motion-max" type="number" min="1" max="90" value="90"> °</label><label>Sample poses <select id="motion-samples"><option>19</option><option selected>37</option><option>73</option></select></label></div><div id="motion-viewport" aria-label="Interactive folding simulation"></div><div class="motion-controls"><button id="motion-play" disabled>▶ Play</button><label>Wall angle <input type="range" id="motion-angle" min="0" max="90" step="0.1" value="0" disabled></label><output id="motion-angle-label">0°</output><button id="motion-reset">Reset</button><button id="motion-fit">Fit</button><button id="motion-save" disabled>Save study settings</button></div><div class="motion-analysis"><div id="motion-metrics">Simulation is bound to the current enclosure definition.</div><details><summary>Study details</summary><svg id="motion-chart" viewBox="0 0 600 105" role="img" aria-label="Outside envelope through wall motion"></svg><p id="motion-scope">Virtual hinges, rigid panels and prescribed outward motion. Hardware and structural behavior require separate validation.</p></details></div></div>`;
   $("#motion-tab .motion-settings").insertAdjacentHTML("afterend", '<div id="motion-states" class="motion-states hidden" aria-label="Named mechanism states"></div>');
+  $(".motion-heading-actions").insertAdjacentHTML("beforeend", '<button id="assembly-run" class="hidden">Run assembly study</button>');
   $(".motion-heading-actions").insertAdjacentHTML("beforeend", '<button id="motion-video" disabled title="Download the complete checked path forward and back as a 1280 × 720 WebM video">Download video</button>');
   $("#canvas-tab").innerHTML =
     `<div class="canvas-toolbar"><strong>Project canvas</strong><span id="canvas-revision"></span><button id="canvas-minus" aria-label="Zoom canvas out">−</button><output id="canvas-zoom">80%</output><button id="canvas-plus" aria-label="Zoom canvas in">＋</button><button id="canvas-fit">Fit all</button></div><div id="workflow-board" tabindex="0" aria-label="Project stage canvas; drag empty space to pan, wheel to zoom"><div id="workflow-world-size"><div id="workflow-world"><svg class="workflow-connectors" width="3100" height="760" aria-hidden="true"><path d="M 450 340 H 2740" stroke="#d3c7b5" stroke-width="2" fill="none" stroke-dasharray="6 6"/></svg><div id="workflow-cards"></div></div></div></div><div class="canvas-pip"><img id="canvas-pip-image" alt="Current CAD model overview"><span>Current revision</span></div><div id="canvas-map" aria-label="Canvas minimap"><div id="canvas-map-cards"></div><div id="canvas-map-view"></div></div><div class="canvas-hint">Drag background to pan · Wheel to zoom · Shift-wheel to scroll · Double-click a stage to open</div>`;
@@ -161,6 +162,7 @@ export function createWorkflow(bridge) {
     const buttons = [
       ...$("#project-tab").querySelectorAll("button"),
       $("#motion-run"),
+      $("#assembly-run"),
       $("#motion-save"),
       $("#motion-video"),
     ];
@@ -460,7 +462,9 @@ export function createWorkflow(bridge) {
         mesh.matrixWorldNeedsUpdate = true;
         mesh.material.color.set(hits.includes(mesh.userData.part.id) ? 0xc06450 : mesh.userData.baseColor);
       });
-      $("#motion-metrics").textContent = `Path ${num(frame.progress_pct)}% · ${frame.extent_mm.map(v=>num(v)).join(" × ")} mm · ${frame.overlaps.length ? "Solid interference" : "No sampled native solid overlap"} · loop error ${frame.loop_position_error_mm.toExponential(1)} mm · hardware and locks unverified`;
+      $("#motion-metrics").textContent = study.study_kind === "assembly"
+        ? `${frame.step} · ${num(frame.progress_pct)}% · ${frame.overlaps.length ? "Solid interference" : "No sampled native solid overlap"} · Physical fit and handling unverified`
+        : `Path ${num(frame.progress_pct)}% · ${frame.extent_mm.map(v=>num(v)).join(" × ")} mm · ${frame.overlaps.length ? "Solid interference" : "No sampled native solid overlap"} · loop error ${frame.loop_position_error_mm.toExponential(1)} mm · hardware and locks unverified`;
       return;
     }
     if (study.family==="panel_hinges") {
@@ -523,6 +527,13 @@ export function createWorkflow(bridge) {
       studyKey = motionSignature(snapshot);
       displayStudy(value);
     });
+  $("#assembly-run").onclick = () => runTask(async () => {
+    const base=context();
+    $("#motion-state").textContent="Checking assembly from separate native parts…";
+    const value=await bridge.api("/motion",{document:bridge.getState().document,config:{family:"assembly"}},600000);
+    if(base!==context())throw new Error("Design changed during assembly study. Run again.");
+    studyKey=motionSignature(snapshot);displayStudy(value);
+  });
   [$("#motion-max"), $("#motion-samples")].forEach((input) =>
     input.addEventListener("change", () => {
       playing = false;
@@ -646,6 +657,7 @@ export function createWorkflow(bridge) {
     });
 
   function motionSettingsMatch() {
+    if(study?.study_kind === "assembly")return true;
     return motionSettingsCurrent(study, $("#motion-max").value, $("#motion-samples").value);
   }
 
@@ -702,7 +714,7 @@ export function createWorkflow(bridge) {
         title: "Drawings & export",
         tag: "06 · DELIVER",
         tab: "drawing",
-        content: `<img class="canvas-drawing-image" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(snapshot.drawing_svg)}" alt="Drawing of this revision"><p>STEP · STL · DXF · PDF · editable JSON</p>`,
+        content: `${snapshot.drawing_svg?`<img class="canvas-drawing-image" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(snapshot.drawing_svg)}" alt="Drawing of this revision">`:'<p>Generating native vector drawing…</p>'}<p>STEP · STL · DXF · PDF · editable JSON</p>`,
         action: "Open drawing",
       },
     ];
@@ -831,6 +843,7 @@ export function createWorkflow(bridge) {
   return {
     update(value) {
       snapshot = value;
+      $("#assembly-run").classList.toggle("hidden",!value.document.metadata?.assembly_plan);
       const general = value.document.metadata?.design_mechanism;
       $("#motion-samples").parentElement.firstChild.textContent = general ? "Samples per transition " : "Sample poses ";
       $("#motion-tab h1").textContent=general ? "Mechanism motion" : value.folding ? value.folding.family.replaceAll("_"," ").replace(/^./,c=>c.toUpperCase())+" folding" : "Wall folding";

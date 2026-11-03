@@ -15,9 +15,9 @@ import csv
 import io
 import json
 import math
+import hashlib
 from pathlib import Path
 import re
-import textwrap
 
 import cadquery as cq
 import ezdxf
@@ -25,6 +25,7 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from .workspace_geometry import _bounds as exact_bounds_mm
+from .motion_cache import ExactMotionCache
 from OCP.BRepLib import BRepLib
 from OCP.GCPnts import GCPnts_QuasiUniformDeflection
 from OCP.gp import gp_Ax2, gp_Pnt, gp_Dir
@@ -45,6 +46,16 @@ VIEWS = {
     "top": ((0, 0, 1), (1, 0, 0), (0, 1), "Top (X / Y)"),
     "right": ((1, 0, 0), (0, 1, 0), (1, 2), "Right (Y / Z)"),
 }
+_owned_projections = ExactMotionCache(max_entries=12, max_bytes=16 * 1024 * 1024)
+
+
+def _projection(shape, direction, x_direction, native_key=None):
+    if native_key is None:
+        return _project(shape, direction, x_direction)
+    return _owned_projections.compute(
+        (native_key, tuple(direction), tuple(x_direction)),
+        lambda: _project(shape, direction, x_direction),
+    )
 
 
 def _number(value, field, bound=100000):
@@ -150,18 +161,80 @@ def _project(shape, direction, x_direction):
     return result
 
 
-def drawing_data(doc, parts):
+def _drawing_context(doc, context):
+    result = {
+        "revision_id": "UNSAVED / WORKING DRAFT",
+        "pose": "Saved CAD pose; motion playback is separate",
+        "material": "Not specified",
+        "tolerances": "Not specified",
+        **(context or {}),
+    }
+    result["geometry_hash"] = hashlib.sha256(
+        json.dumps(doc.get("features", []), sort_keys=True, allow_nan=False).encode()
+    ).hexdigest()
+    if any(not isinstance(value, str) or len(value) > 200 for value in result.values()):
+        raise ValueError(
+            "Drawing identity and manufacturing notes must be bounded text"
+        )
+    return result
+
+
+def section_page(doc, parts, index, context=None):
+    """Render only the requested native cut, avoiding unrelated HLR work."""
+    from .drawing_sections import specifications, section_data, section_scene
+
+    specs = specifications(doc.get("metadata", {}).get("drawing_sections", []))
+    if type(index) is not int or not 0 <= index < len(specs):
+        raise ValueError("Unknown section page")
+    base = {
+        "name": str(doc.get("name", "Untitled drawing"))[:120],
+        "drawing_context": _drawing_context(doc, context),
+        "sheet": {"scale_label": "NTS"},
+        "feature_parameters": [
+            {
+                "id": f.get("id"),
+                "type": f.get("type"),
+                "name": f.get("name", f.get("type")),
+                "suppressed": f.get("suppressed", False),
+                "params": f.get("params", {}),
+            }
+            for f in doc.get("features", [])
+        ],
+    }
+    base["page_count"] = 1 + len(specs) + len(_parameter_scenes(base))
+    base["sheet_number"] = index + 2
+    section = section_data(parts, specs[index])
+    section["tag"] = chr(65 + index) + "-" + chr(65 + index)
+    scene, measurements = section_scene(section, base)
+    return {"scene": scene, "measurements": measurements}
+
+
+def drawing_data(doc, parts, context=None, native_build=None):
     """Return measured geometry and view layout; annotation coordinates are pixels."""
     if not isinstance(doc, dict):
         raise ValueError("Drawing document must be an object")
     annotations = validate_annotations(doc)
     shapes = _shapes(parts)
+    native_key = None
+    if (
+        native_build is not None
+        and len(parts) == len(native_build["parts"])
+        and all(a is b for a, b in zip(parts, native_build["parts"], strict=True))
+    ):
+        from .workspace_cache import identity_for_build
+
+        native_key = identity_for_build(native_build)
     combined = cq.Compound.makeCompound(shapes)
     minimum, maximum = exact_bounds_mm(combined)
     dimensions = [maximum[i] - minimum[i] for i in range(3)]
     if not all(math.isfinite(x) and x > 1e-8 for x in dimensions):
         raise ValueError("Drawing requires a nondegenerate 3D BREP")
     views = {}
+    layout = doc.get("metadata", {}).get(
+        "drawing_layout", "legacy-v1" if annotations else "aligned-v1"
+    )
+    if layout not in ("legacy-v1", "aligned-v1"):
+        raise ValueError("Unknown drawing layout")
     fit = (
         min(
             280 / max(dimensions[0], dimensions[1]),
@@ -169,6 +242,16 @@ def drawing_data(doc, parts):
         )
         / SHEET_UNITS_PER_MM
     )
+    if layout == "aligned-v1":
+        fit = (
+            min(
+                360 / dimensions[0],
+                210 / dimensions[1],
+                160 / dimensions[2],
+                300 / dimensions[1],
+            )
+            / SHEET_UNITS_PER_MM
+        )
     # Engineering scales, shared across views. Never enlarge one view silently.
     exponent = math.floor(math.log10(fit))
     ratio = max(
@@ -179,8 +262,10 @@ def drawing_data(doc, parts):
     for index, (key, (direction, x_dir, axes, label)) in enumerate(VIEWS.items()):
         width, height = [dimensions[i] for i in axes]
         x, y = 55 + 390 * index, 150
+        if layout == "aligned-v1":
+            x, y = {"front": (70, 410), "top": (70, 135), "right": (550, 410)}[key]
         views[key] = {
-            **_project(combined, direction, x_dir),
+            **_projection(combined, direction, x_dir, native_key),
             "label": label,
             "origin_px": [x, y],
             "scale_px_per_mm": scale,
@@ -192,12 +277,31 @@ def drawing_data(doc, parts):
             ],
             "width_mm": width,
             "height_mm": height,
+            "axis_names": {"front": ("W", "H"), "top": ("W", "D"), "right": ("D", "H")}[
+                key
+            ],
         }
     from .component_library import instances
 
-    return {
+    drawing_context = _drawing_context(doc, context)
+
+    data = {
         "name": str(doc.get("name", "Untitled drawing"))[:120],
         "library_components": instances(doc),
+        "body_rows": [
+            {
+                "id": part.get("id", f"body_{i + 1:03d}")
+                if isinstance(part, dict)
+                else f"body_{i + 1:03d}",
+                "size_mm": [hi - lo for lo, hi in zip(*exact_bounds_mm(shape))],
+            }
+            for i, (part, shape) in enumerate(zip(parts, shapes, strict=True))
+        ],
+        "layout": layout,
+        "drawing_context": drawing_context,
+        "isometric": _projection(combined, (1, -1, 1), (1, 1, 0), native_key)
+        if layout == "aligned-v1"
+        else None,
         "views": views,
         "annotations": annotations,
         "bbox_mm": {"min": minimum, "max": maximum, "size": dimensions},
@@ -224,6 +328,24 @@ def drawing_data(doc, parts):
             for f in doc.get("features", [])
         ],
     }
+    from .drawing_sections import specifications, section_data, section_scene
+
+    specs = specifications(doc.get("metadata", {}).get("drawing_sections", []))
+    data["section_specs"] = specs
+    data["page_count"] = 1 + len(specs) + len(_parameter_scenes(data))
+    normalized_parts = [
+        {"id": row["id"], "shape": shape}
+        for row, shape in zip(data["body_rows"], shapes, strict=True)
+    ]
+    data["section_pages"] = []
+    for index, spec in enumerate(specs):
+        section = section_data(normalized_parts, spec)
+        section["tag"] = chr(65 + index) + "-" + chr(65 + index)
+        scene, measurements = section_scene(
+            section, {**data, "sheet_number": index + 2}
+        )
+        data["section_pages"].append({"scene": scene, "measurements": measurements})
+    return data
 
 
 def _annotation_label(a):
@@ -234,6 +356,14 @@ def _annotation_label(a):
 
 
 def _scene(data):
+    if data.get("layout") == "aligned-v1":
+        from .drawing_layout import aligned_scene
+
+        return aligned_scene(data)
+    return _legacy_scene(data)
+
+
+def _legacy_scene(data):
     scene = []
 
     def text(x, y, value, size=14, color="#243942", **extra):
@@ -380,14 +510,14 @@ def _scene(data):
     return scene
 
 
-def _svg(data, embed_font=False):
+def _svg(data, embed_font=False, scene=None):
     font_url = (
         "data:font/ttf;base64," + base64.b64encode(FONT_PATH.read_bytes()).decode()
         if embed_font
         else "/assets/vendor/FormaSans.ttf"
     )
     out = [
-        '<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="280mm" viewBox="0 0 1200 800">',
+        f'<svg xmlns="http://www.w3.org/2000/svg" data-layout="{data.get("layout", "legacy-v1")}" width="420mm" height="280mm" viewBox="0 0 1200 800">',
         "<metadata>"
         + html.escape(
             FONT_PATH.with_name("FormaSans-LICENSE.txt").read_text(encoding="utf-8")
@@ -397,15 +527,20 @@ def _svg(data, embed_font=False):
         f'<style>@font-face{{font-family:FormaSans;src:url("{font_url}")}}</style>',
         '<g font-family="FormaSans,Arial,sans-serif">',
     ]
-    for item in _scene(data):
+    for item in _scene(data) if scene is None else scene:
         annotation = (
             f' data-annotation-id="{html.escape(item["annotation_id"], quote=True)}"'
             if "annotation_id" in item
             else ""
         )
         if item["type"] == "text":
+            transform = (
+                f' transform="rotate({item["rotation"]} {item["x"]} {item["y"]})"'
+                if item.get("rotation")
+                else ""
+            )
             out.append(
-                f'<text x="{item["x"]:g}" y="{item["y"]:g}" font-size="{item["size"]}" fill="{item["color"]}"{annotation}>{html.escape(item["text"])}</text>'
+                f'<text x="{item["x"]:g}" y="{item["y"]:g}" font-size="{item["size"]}" fill="{item["color"]}"{transform}{annotation}>{html.escape(item["text"])}</text>'
             )
         else:
             points = " ".join(f"{x:.8g},{y:.8g}" for x, y in item["points"])
@@ -417,12 +552,27 @@ def _svg(data, embed_font=False):
     return "\n".join(out + ["</g></svg>"])
 
 
-def drawing_svg(doc, parts):
-    return _svg(drawing_data(doc, parts))
+def drawing_svg(doc, parts, context=None, native_build=None):
+    data = drawing_data(doc, parts, context, native_build)
+    return _svg(data)
 
 
 def _pdf(data):
-    return _pdf_scenes([_scene(data), *_parameter_scenes(data)])
+    appendix = _parameter_scenes(data)
+    section_pages = [page["scene"] for page in data.get("section_pages", [])]
+    data = {**data, "page_count": 1 + len(section_pages) + len(appendix)}
+    for i, scene in enumerate(appendix):
+        scene.append(
+            dict(
+                type="text",
+                x=1090,
+                y=770,
+                text=f"{i + 2 + len(section_pages)} / {data['page_count']}",
+                size=10,
+                color="#243942",
+            )
+        )
+    return _pdf_scenes([_scene(data), *section_pages, *appendix])
 
 
 def _pdf_scene(scene):
@@ -450,9 +600,13 @@ def _pdf_scenes(scenes):
                 canvas.setFillColorRGB(*color)
                 canvas.setFont("FormaSans", item["size"])
                 for row, value in enumerate(item["text"].splitlines() or [""]):
-                    canvas.drawString(
-                        item["x"], 800 - item["y"] - row * item["size"] * 1.2, value
+                    canvas.saveState()
+                    canvas.translate(
+                        item["x"], 800 - item["y"] - row * item["size"] * 1.2
                     )
+                    canvas.rotate(-item.get("rotation", 0))
+                    canvas.drawString(0, 0, value)
+                    canvas.restoreState()
             else:
                 canvas.setStrokeColorRGB(*color)
                 canvas.setLineWidth(item["width"])
@@ -757,6 +911,53 @@ def _dxf(data, path):
             },
         ).render()
         x_offset += v["width_mm"] + gap * 2
+    for index, page in enumerate(data.get("section_pages", [])):
+        section = page["measurements"]
+        factor = section["model_scale"] * SHEET_UNITS_PER_MM
+        width, height = section["size_mm"]
+        for role, suffix, color in (
+            ("section-contour", "CONTOUR", 7),
+            ("section-hatch", "HATCH", 8),
+        ):
+            layer = f"SECTION_{index + 1}_{suffix}"
+            doc.layers.new(layer, dxfattribs={"color": color})
+            for item in page["scene"]:
+                if item.get("role") == role:
+                    space.add_lwpolyline(
+                        [
+                            (x_offset + (x - 70) / factor, height - (y - 155) / factor)
+                            for x, y in item["points"]
+                        ],
+                        dxfattribs={"layer": layer},
+                    )
+        spec = section["plane"]
+        space.add_text(
+            f"SECTION {section['tag']} / {spec['name']} / {spec['axis']}={spec['offset_mm']:g} mm",
+            dxfattribs={"height": text_height, "insert": (x_offset, height + gap / 2)},
+        )
+        space.add_linear_dim(
+            base=(x_offset, -gap / 3),
+            p1=(x_offset, 0),
+            p2=(x_offset + width, 0),
+            angle=0,
+            override={
+                "dimtxt": text_height * 0.7,
+                "dimasz": text_height * 0.5,
+                "dimdec": 3,
+            },
+        ).render()
+        space.add_linear_dim(
+            base=(x_offset + width + gap / 3, 0),
+            p1=(x_offset + width, 0),
+            p2=(x_offset + width, height),
+            angle=90,
+            override={
+                "dimtxt": text_height * 0.7,
+                "dimasz": text_height * 0.5,
+                "dimdec": 3,
+            },
+        ).render()
+        x_offset += width + gap * 2
     doc.layers.new("USER_REFERENCE", dxfattribs={"color": 5})
     for a in data["annotations"]:
         v = data["views"].get(a["view"])
@@ -794,7 +995,7 @@ def _dxf(data, path):
     doc.saveas(path)
 
 
-def export_drawings(doc, parts, folder):
+def export_drawings(doc, parts, folder, context=None):
     """Export shared measured projections plus the full editable document source."""
     doc = deepcopy(doc)
     from .folding import specification as folding_specification
@@ -802,7 +1003,7 @@ def export_drawings(doc, parts, folder):
     for feature in doc.get("features", []):
         if feature.get("type") == "folding_assembly":
             feature["params"] = folding_specification(feature.get("params", {}))
-    data = drawing_data(doc, parts)
+    data = drawing_data(doc, parts, context)
     source = json.dumps(doc, indent=2, ensure_ascii=False, allow_nan=False)
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
@@ -811,9 +1012,28 @@ def export_drawings(doc, parts, folder):
     )
     (folder / "drawing.svg").write_text(_svg(data, embed_font=True), encoding="utf-8")
     (folder / "drawing.pdf").write_bytes(_pdf(data))
+    section_files = []
+    for index, page in enumerate(data.get("section_pages", [])):
+        name = f"section-{index + 1}.svg"
+        (folder / name).write_text(
+            _svg(data, embed_font=True, scene=page["scene"]), encoding="utf-8"
+        )
+        section_files.append(name)
     _dxf(data, folder / "drawing.dxf")
     (folder / "drawing-source.json").write_text(source, encoding="utf-8")
-    metadata = {key: value for key, value in data.items() if key != "views"}
+    metadata = {
+        key: value
+        for key, value in data.items()
+        if key not in ("views", "isometric", "section_pages")
+    }
+    metadata["section_pages"] = [
+        page["measurements"] for page in data.get("section_pages", [])
+    ]
+    metadata["isometric"] = (
+        {"scale": "NTS", "projection": "Native BREP hidden-line projection"}
+        if data.get("isometric")
+        else None
+    )
     metadata["views"] = {
         key: {k: v for k, v in view.items() if k not in ("visible", "hidden")}
         for key, view in data["views"].items()
@@ -852,6 +1072,7 @@ def export_drawings(doc, parts, folder):
             "drawing.dxf",
             "drawing-source.json",
             "drawing-measurements.json",
+            *section_files,
         ],
         "measurements": metadata,
     }
