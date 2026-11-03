@@ -150,6 +150,10 @@ def wall_frame(definitions, angle_deg):
 
 
 def motion_study(document, config=None):
+    from .folding_study import folding_feature, folding_study
+
+    if folding_feature(document) is not None:
+        return folding_study(document, config)
     if requirement_state(document)["status"] != "current":
         raise ValueError(
             "Wall motion requires the current supported enclosure panel definition. Rebuild the enclosure before simulating custom geometry."
@@ -186,17 +190,22 @@ def validate_motion(config):
     }:
         raise ValueError("Unsupported motion settings")
     c = {"family": "enclosure_walls", "max_angle_deg": 90.0, "samples": 37, **config}
-    if c["family"] != "enclosure_walls":
+    if c["family"] not in ("enclosure_walls", "panel_hinges"):
         raise ValueError("Unsupported motion family")
     if (
         isinstance(c["max_angle_deg"], bool)
         or not isinstance(c["max_angle_deg"], (int, float))
         or not math.isfinite(c["max_angle_deg"])
-        or not 1 <= c["max_angle_deg"] <= 90
+        or not 1
+        <= c["max_angle_deg"]
+        <= (90 if c["family"] == "enclosure_walls" else 170)
     ):
-        raise ValueError("Maximum wall angle must be from 1 to 90 degrees")
-    if type(c["samples"]) is not int or not 5 <= c["samples"] <= 73:
-        raise ValueError("Motion samples must be an integer from 5 to 73")
+        raise ValueError("Motion driver angle is outside the supported range")
+    maximum_samples = 73 if c["family"] == "enclosure_walls" else 721
+    if type(c["samples"]) is not int or not 5 <= c["samples"] <= maximum_samples:
+        raise ValueError(
+            f"Motion samples must be an integer from 5 to {maximum_samples}"
+        )
     return c
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+from copy import deepcopy
 from pathlib import Path
 
 import cadquery as cq
@@ -128,6 +129,12 @@ def _checked(shapes):
 
 
 def _apply(kind, p, shapes, asset_loader):
+    if kind == "folding_assembly":
+        if shapes:
+            raise ValueError("A folding assembly must start an empty feature history")
+        from .folding import assembly
+
+        return [part["shape"] for part in assembly(p)["parts"]]
     if kind in ("spur_gear", "bevel_gear", "threaded_body", "socket_head_screw"):
         from .mechanical_features import apply_mechanical
 
@@ -577,6 +584,38 @@ def build_document(doc, asset_loader=None):
             brep_valid=all(s.isValid() for s in shapes),
             error=error if failed else (None if shapes else "No active solid geometry"),
         )
+        active_folds = [
+            f
+            for f in features
+            if f.get("type") == "folding_assembly" and not f.get("suppressed")
+        ]
+        if (
+            result["checks"]["passed"]
+            and len(active_folds) == 1
+            and len([f for f in features if not f.get("suppressed")]) == 1
+        ):
+            from .folding import assembly, closure, collisions
+
+            fold = assembly(active_folds[0]["params"])
+            checked = collisions(fold["parts"])
+            axis_error = closure(
+                fold["graph"], fold["poses"], fold["spec"]["hinge_radius"]
+            )
+            result["checks"]["folding"] = {
+                "checked": True,
+                "passed": not checked["overlaps"] and axis_error < 1e-7,
+                "axis_closure_error_mm": axis_error,
+                **checked,
+                "scope": "Current finite-thickness pose only; run the folding study for a sampled trajectory",
+            }
+            for i, part in enumerate(fold["parts"]):
+                result["parts"][i]["name"] = part["name"]
+                result["mesh"][i]["name"] = part["name"]
+            if not result["checks"]["folding"]["passed"]:
+                result["checks"].update(
+                    passed=False,
+                    error="Folding pose has solid interference or disconnected hinge axes",
+                )
         if result["checks"]["passed"]:
             from .mechanical_validation import analyze_gears
 
@@ -605,6 +644,12 @@ def build_document(doc, asset_loader=None):
 
 
 def export_document(doc, asset_loader, folder):
+    doc = deepcopy(doc)
+    from .folding import specification as folding_specification
+
+    for feature in doc.get("features", []):
+        if feature.get("type") == "folding_assembly":
+            feature["params"] = folding_specification(feature.get("params", {}))
     result = build_document(doc, asset_loader)
     if not result["checks"]["passed"]:
         return {"files": [], "checks": result["checks"], "features": result["features"]}

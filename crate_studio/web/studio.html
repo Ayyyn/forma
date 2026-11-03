@@ -292,6 +292,36 @@
       accept=".step,.stp,.json"
       class="hidden"
     />
+    <dialog id="print-settings-dialog">
+      <form method="dialog">
+        <h2>Prepare print pack</h2>
+        <p class="parameter-note">Separate components, plate layouts, a hinge-fit coupon and assembly guide. Slice with your printer profile.</p>
+        <label class="field-label">Printer name<input id="print-printer" maxlength="100" value="Unspecified"></label>
+        <div class="field-row three">
+          <label class="field-label">Bed width · mm<input id="print-width" type="number" min="50" max="1000" value="220"></label>
+          <label class="field-label">Bed depth · mm<input id="print-depth" type="number" min="50" max="1000" value="220"></label>
+          <label class="field-label">Build height · mm<input id="print-height" type="number" min="50" max="1000" value="220"></label>
+        </div>
+        <div class="field-row three">
+          <label class="field-label">Nozzle · mm<input id="print-nozzle" type="number" min="0.2" max="1" step="0.05" value="0.4"></label>
+          <label class="field-label">Layer height · mm<input id="print-layer" type="number" min="0.08" max="0.8" step="0.02" value="0.2"></label>
+          <label class="field-label">Material<input id="print-material" maxlength="100" value="PLA"></label>
+        </div>
+        <div class="dialog-actions"><button value="cancel">Cancel</button><button id="print-confirm" type="button" class="primary">Save settings & export</button></div>
+      </form>
+    </dialog>
+    <dialog id="mesh-import-dialog">
+      <form method="dialog">
+        <h2>Import 3D mesh</h2>
+        <p id="mesh-import-filename" class="parameter-note"></p>
+        <label class="field-label">Source units<select id="mesh-import-units">
+          <option value="mm">Millimetres</option><option value="cm">Centimetres</option>
+          <option value="inch">Inches</option><option value="m">Metres</option>
+        </select></label>
+        <p class="parameter-note">Closed solid meshes, up to 2,500 triangles. Imports retain faceted geometry; use STEP for smooth CAD surfaces.</p>
+        <div class="dialog-actions"><button value="cancel">Cancel</button><button id="mesh-import-confirm" type="button" class="primary">Import solid</button></div>
+      </form>
+    </dialog>
     <dialog id="annotation-dialog">
       <form method="dialog">
         <h2>Drawing annotation</h2>

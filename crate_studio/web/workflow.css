@@ -134,10 +134,12 @@
   background: #f5f2ec;
 }
 .motion-heading {
-  padding: 20px 24px 0;
+  padding: 12px 24px 0;
   margin-bottom: 6px;
   flex-shrink: 0;
 }
+.motion-heading h1 { margin: 5px 0; font-size: 21px; }
+.motion-heading p { margin: 5px 0; font-size: 11px; }
 .motion-settings {
   display: flex;
   align-items: center;
@@ -233,7 +235,7 @@
 }
 #motion-chart {
   width: 100%;
-  height: 85px;
+  height: 55px;
   display: block;
 }
 .canvas-focus .studio-layout {

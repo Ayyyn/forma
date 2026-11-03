@@ -3,10 +3,12 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+import io
 from xml.etree import ElementTree as ET
 
 import cadquery as cq
 import ezdxf
+from pypdf import PdfReader
 
 from crate_studio.workspace_drawing import (
     _scene,
@@ -178,8 +180,16 @@ class WorkspaceDrawingTests(unittest.TestCase):
             ET.fromstring((folder / "drawing.svg").read_text(encoding="utf-8"))
             pdf = (folder / "drawing.pdf").read_bytes()
             self.assertTrue(pdf.startswith(b"%PDF-1.4"))
-            self.assertIn(b"/MediaBox [0 0 1190.55118110 841.88976378]", pdf)
-            self.assertIn(b"999 mm REF", pdf)
+            parsed = PdfReader(io.BytesIO(pdf))
+            # ReportLab serializes PDF numbers to finite decimal precision;
+            # bound physical sheet error to one micron, below curve resolution.
+            self.assertAlmostEqual(
+                float(parsed.pages[0].mediabox.width) * 25.4 / 72, 420, delta=0.001
+            )
+            self.assertAlmostEqual(
+                float(parsed.pages[0].mediabox.height) * 25.4 / 72, 297, delta=0.001
+            )
+            self.assertIn("999 mm REF", parsed.pages[0].extract_text())
             dxf = ezdxf.readfile(folder / "drawing.dxf")
             self.assertEqual(dxf.units, 4)
             model = dxf.modelspace()
@@ -207,6 +217,35 @@ class WorkspaceDrawingTests(unittest.TestCase):
             a, b = dimension["points"]
             paper_mm = math.dist(a, b) * PDF_POINTS_PER_UNIT * 25.4 / 72
             self.assertAlmostEqual(paper_mm, dimension["value_mm"], places=8)
+
+    def test_pdf_retains_engineering_symbols_source_parameters_and_is_repeatable(self):
+        doc = self.document()
+        doc["name"] = "Crème Ø6 ±0.1 × 2 · Δ µ"
+        doc["features"] = [
+            {
+                "id": "bore",
+                "type": "cut_hole",
+                "params": {
+                    "radius": 3,
+                    "depth": 3,
+                    "z": 0,
+                    "end_condition": "through_all",
+                },
+            }
+        ]
+        with tempfile.TemporaryDirectory(
+            dir=Path(__file__).resolve().parents[1] / "output"
+        ) as temp:
+            folder = Path(temp)
+            export_drawings(doc, self.parts(), folder)
+            pdf = (folder / "drawing.pdf").read_bytes()
+            reader = PdfReader(io.BytesIO(pdf))
+            self.assertIn(doc["name"], reader.pages[0].extract_text())
+            text = "\n".join(page.extract_text() for page in reader.pages[1:])
+            self.assertIn("radius", text)
+            self.assertIn("inactive (through all)", text)
+            export_drawings(doc, self.parts(), folder)
+            self.assertEqual(pdf, (folder / "drawing.pdf").read_bytes())
 
     def test_right_view_preserves_depth_direction_for_asymmetric_part(self):
         # A distinct upright at the back (+Y) must appear on the right of the

@@ -11,12 +11,12 @@ Studio is a bounded CAD editor built on OpenCascade. It implements the operation
 | Solid features | Boxes, cylinders, holes, pockets, booleans, fillets, chamfers, mirror, linear pattern | Invalid operations stop downstream regeneration |
 | Direct editing | Planar face push/pull on native or imported STEP geometry; selected-edge fillet/chamfer | No curved-face offsets or arbitrary surface deformation |
 | Manipulation | Genuine 3D translation handles, numeric translation/rotation | Rotations use the global origin, followed by translation |
-| Assembly | Separate bodies, placement, sequential planar-face alignment, offsets and interference checks | No simultaneous multi-mate solver; the separate Motion tab supports prescribed enclosure wall folding |
+| Assembly | Separate bodies, sequential planar alignment, offsets, interference checks; five native rigid-panel folding families with hinges and pins | No general simultaneous mate/origami solver; motion qualification is bounded and sampled |
 | Inspection | Face area, edge length, point distances, exact BREP distances and planar normal angles | Picked-point distances follow tessellated hit positions; exact results are labeled separately |
 | Drawings | BREP projections, hidden lines, measured overall dimensions and editable/movable text notes | Reference annotations cannot override measured geometry; no GD&T or production release |
 | Projects | Revisions, undo/redo, named configurations, visibility, colors and portable source | Local single-user workflow, not PLM |
-| Import | STEP/STP, single closed DXF profile with declared units, portable Studio JSON | No native SLDPRT/SLDASM/DWG history or arbitrary mesh editing |
-| Export | STEP, STL, SVG, PDF, 1:1 mm DXF, body-list CSV and portable package | STEP retains neutral solids; feature history lives in Studio JSON |
+| Import | STEP/STP, closed STL/OBJ with explicit units, single closed DXF profile, portable Studio JSON | Mesh limit 2,500 triangles/50 components; faceted solids, not recovered smooth surfaces/history; no native SLDPRT/SLDASM/DWG history |
+| Export | STEP/STL, SVG, Unicode PDF with parameter appendix, 1:1 mm DXF, CSV, portable package and separate folding print pack | STEP retains neutral solids; feature history lives in Studio JSON; print packs require a supported unmodified folding feature |
 | Meta | Proposed feature edits, BREP verification, preview and explicit Apply | Quotes establish provenance, not correct interpretation or physical suitability |
 
 ## Human editing
@@ -54,4 +54,4 @@ Previous-work attribution remains in `crate_studio/README.md`. TransformControls
 
 ## Shared workflow and folding
 
-Project, Canvas and Motion now share the Studio revision. See [the workflow guide](FORMA_WORKFLOW.md) for thickness propagation, finite-thickness wall motion, stage navigation, export reports and a physical mockup protocol. The wall study uses virtual hinges and sampled OBB overlap checks; it does not model hardware or loads. Brief/display changes reuse cached geometry and drawings; annotation changes invalidate drawings while reusing geometry.
+Project, Canvas and Motion share the Studio revision. See [the workflow guide](FORMA_WORKFLOW.md) for enclosure thickness propagation and [articulated folding and 3D import](FORMA_FOLDING.md) for the five native hinge/pin mechanisms, sampled BREP checks and prepared print packs. The separate enclosure-wall study uses virtual hinges and OBB overlap checks; it does not model physical hardware or loads. Brief/display changes reuse cached geometry and drawings; annotation changes invalidate drawings while reusing geometry.

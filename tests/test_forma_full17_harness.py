@@ -122,6 +122,8 @@ class BaselineHarnessTests(unittest.TestCase):
             ), patch(
                 "research.run_forma_full17.wa.RUNS", Path(temp) / "receipts"
             ), patch(
+                "research.run_forma_full17.agent.CAP_USD", 25
+            ), patch(
                 "research.run_forma_full17.wa.estimated_spend", return_value=25
             ), patch(
                 "research.run_forma_full17.request"

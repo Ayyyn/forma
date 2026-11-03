@@ -3,6 +3,7 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 from functools import lru_cache
+from importlib.metadata import version as package_version
 from .workspace_requirements import enclosure_features, requirement_state
 from .workspace_workflow import (
     revise_enclosure,
@@ -33,7 +34,12 @@ from .workspace_geometry import (
     export_document,
     _bounds as exact_bounds_mm,
 )
-from .workspace_drawing import drawing_svg, export_drawings, validate_annotations
+from .workspace_drawing import (
+    drawing_svg,
+    export_drawings,
+    validate_annotations,
+    FONT_PATH,
+)
 from .workspace_cache import (
     cached_build,
     cache_clear,
@@ -47,6 +53,25 @@ DATA = ROOT / "output/forma/studio"
 # per request could label an old imported function with newly edited source.
 EXPORT_VERSION = hashlib.sha256(
     GEOMETRY_VERSION.encode()
+    + FONT_PATH.read_bytes()
+    + FONT_PATH.with_name("FormaSans-LICENSE.txt").read_bytes()
+    + json.dumps(
+        {
+            name: package_version(name)
+            for name in (
+                "cadquery",
+                "cadquery-ocp",
+                "trimesh",
+                "ezdxf",
+                "reportlab",
+                "numpy",
+                "shapely",
+                "cq-gears",
+                "cq-warehouse",
+            )
+        },
+        sort_keys=True,
+    ).encode()
     + b"".join(
         Path(__file__).with_name(name).read_bytes()
         for name in (
@@ -55,6 +80,8 @@ EXPORT_VERSION = hashlib.sha256(
             "workspace_server.py",
             "workspace_requirements.py",
             "workspace_workflow.py",
+            "folding_study.py",
+            "folding_print.py",
         )
     )
 ).hexdigest()[:12]
@@ -83,9 +110,10 @@ CAPABILITIES = {
         "bevel_gear",
         "threaded_body",
         "socket_head_screw",
+        "folding_assembly",
     ],
-    "imports": ["step", "stp", "dxf", "json"],
-    "exports": ["step", "stl", "json", "svg", "pdf", "dxf", "csv", "bundle"],
+    "imports": ["step", "stp", "stl", "obj", "dxf", "json"],
+    "exports": ["step", "stl", "json", "svg", "pdf", "dxf", "csv", "bundle", "print"],
     "limits": {"features": 60, "bodies": 50, "upload_bytes": 15_000_000},
     "scope": "Declarative BREP features, dimension-driven profiles and sequential planar alignment. No native SolidWorks/AutoCAD feature history, general sketch constraint solver, simultaneous mate solver or manufacturing qualification.",
 }
@@ -168,6 +196,17 @@ def normalize_document(value):
     doc.setdefault("metadata", {})
     if not isinstance(doc["display"], dict) or not isinstance(doc["metadata"], dict):
         raise ValueError("Document display and metadata must be objects")
+    from .folding import specification as fold_specification
+
+    for feature in doc["features"]:
+        if isinstance(feature, dict) and feature.get("type") == "folding_assembly":
+            feature["params"] = fold_specification(feature.get("params", {}))
+    if "print_settings" in doc["metadata"]:
+        from .folding_print import print_settings
+
+        doc["metadata"]["print_settings"] = print_settings(
+            doc["metadata"]["print_settings"]
+        )
     if "motion" in doc["metadata"]:
         doc["metadata"]["motion"] = validate_motion(doc["metadata"]["motion"])
     if (
@@ -202,6 +241,9 @@ def normalize_document(value):
             raise ValueError("Configurations map names to feature arrays")
         if len(config) > 60:
             raise ValueError("Configuration feature limit exceeded")
+        for feature in config:
+            if isinstance(feature, dict) and feature.get("type") == "folding_assembly":
+                feature["params"] = fold_specification(feature.get("params", {}))
     return doc
 
 
@@ -295,6 +337,16 @@ def snapshot(document, cad_lock):
         },
     ]
     requirements = requirement_state(doc)
+    if "folding" in result["checks"]:
+        folded = result["checks"]["folding"]
+        checks.append(
+            {
+                "id": "folding_pose",
+                "label": "Hinge alignment and solid clearance · current pose",
+                "status": "pass" if folded["passed"] else "fail",
+                "detail": f"Axis closure {folded['axis_closure_error_mm']:.3g} mm; native solid interference checked. Run Motion to verify a trajectory.",
+            }
+        )
     if requirements["status"] != "unbound":
         checks.append(
             {
@@ -321,8 +373,22 @@ def snapshot(document, cad_lock):
                 "detail": drawing_error,
             }
         )
+    folding_info = None
+    if "folding" in result["checks"]:
+        from .folding import describe, flat_assembly, DEFAULT_LIMITS, ABSOLUTE_LIMITS
+
+        feature = next(
+            f
+            for f in doc["features"]
+            if f["type"] == "folding_assembly" and not f.get("suppressed")
+        )
+        folding_info = describe(feature["params"])
+        folding_info["graph"] = flat_assembly(feature["params"])["graph"]
+        folding_info["default_limit_deg"] = DEFAULT_LIMITS[folding_info["family"]]
+        folding_info["absolute_limit_deg"] = ABSOLUTE_LIMITS[folding_info["family"]]
     return {
         "document": doc,
+        "folding": folding_info,
         "requirements_state": requirements,
         "geometry_signature": geometry_signature(doc),
         "geometry": {
@@ -478,6 +544,7 @@ class ImportBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filename: str = Field(min_length=1, max_length=250)
     content_base64: str = Field(max_length=22_000_000)
+    mesh_units: str | None = None
     parent_id: str | None = None
 
 
@@ -608,6 +675,45 @@ def create_router(cad_lock, crate_reader=None):
                     "import_filename": name,
                     "import_units": "STEP unit conversion to millimetres",
                 },
+            }
+        elif suffix in (".stl", ".obj"):
+            from .mesh_import import import_mesh
+
+            ASSETS.mkdir(parents=True, exist_ok=True)
+            original = ASSETS / (hashlib.sha256(data).hexdigest() + suffix)
+            if not original.exists():
+                original.write_bytes(data)
+            with cad_lock:
+                shape, conversion = import_mesh(data, suffix[1:], body.mesh_units)
+                # The standard STEP asset path then supplies every existing CAD
+                # editing, caching and portable-project operation.
+                from .mesh_import import CONVERSION_VERSION
+
+                converted = ASSETS / (
+                    hashlib.sha256(
+                        data + body.mesh_units.encode() + CONVERSION_VERSION.encode()
+                    ).hexdigest()
+                    + ".converted.step"
+                )
+                if not converted.exists():
+                    import cadquery as cq
+
+                    cq.exporters.export(shape, str(converted))
+                key = store_asset(converted.read_bytes())
+            doc = {
+                "name": name,
+                "features": [
+                    {
+                        "id": "import-" + uuid.uuid4().hex[:8],
+                        "type": "import_step",
+                        "name": "Imported " + suffix[1:].upper() + " solid",
+                        "params": {"asset_id": key},
+                        "suppressed": False,
+                    }
+                ],
+                "annotations": [],
+                "display": {},
+                "metadata": {"import_filename": name, "mesh_conversion": conversion},
             }
         elif suffix == ".json":
             try:
@@ -920,6 +1026,28 @@ def create_router(cad_lock, crate_reader=None):
         value = read_document(id, cad_lock)
         if format not in CAPABILITIES["exports"]:
             raise HTTPException(404, "Unknown export format")
+        if format == "print":
+            from .folding_print import export_print_pack
+
+            folder = DATA / "exports" / valid_id(id) / EXPORT_VERSION / "print"
+            with cad_lock:
+                if not (folder / "complete.json").is_file():
+                    packed = export_print_pack(value["document"], folder, asset_path)
+                    (folder / "complete.json").write_text(
+                        json.dumps(
+                            {
+                                "verified": packed["manifest"][
+                                    "geometric_print_preflight_passed"
+                                ]
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+            return FileResponse(
+                folder / "print-pack.zip",
+                media_type="application/zip",
+                filename="print-pack.zip",
+            )
         folder = DATA / "exports" / valid_id(id) / EXPORT_VERSION
         with cad_lock:
             if not (folder / "complete.json").is_file():
@@ -1007,8 +1135,10 @@ def create_router(cad_lock, crate_reader=None):
                                 "drawing.pdf": "A3 landscape; declared common model scale; print 100%",
                                 "drawing.svg": "420 x 280 mm content; declared common model scale",
                                 "body-list.csv": "dimensions mm, volume mm3, area mm2",
+                                "design-parameters.csv": "Complete source parameter values with meanings and units; inactive parameters are labelled",
                             },
-                            "drawing_scope": "Measured overall BREP extents, not a complete local-feature/tolerance manufacturing drawing; user dimensions are REF",
+                            "drawing_scope": "Measured overall BREP extents and complete parameter appendix with embedded Unicode font; not a complete local-feature/tolerance manufacturing drawing; user dimensions are REF",
+                            "folding_print": "workspace.stl is the assembled source pose. Use the separate Folding print pack for oriented independent parts, build plates, fit coupon and assembly instructions.",
                             "curve_chord_deflection_mm": drawing["measurements"][
                                 "curve_chord_deflection_mm"
                             ],

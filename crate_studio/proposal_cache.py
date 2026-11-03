@@ -23,6 +23,8 @@ def identity(document, instruction, selection, settings, asset_loader):
             "mechanical_features.py",
             "mechanical_validation.py",
             "mechanical_design.py",
+            "folding.py",
+            "folding_study.py",
             "workspace_cache.py",
             "workspace_requirements.py",
             "workspace_workflow.py",

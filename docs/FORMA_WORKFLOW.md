@@ -2,6 +2,10 @@
 
 Run `python -m crate_studio --port 8770` with the CAD dependencies installed, then open `http://127.0.0.1:8770/studio`.
 
+The enclosure workflow below remains available. For the five articulated folding
+families with real bored hinges/removable pins, print packs and STEP/STL/OBJ
+import, see [Articulated folding and model import](FORMA_FOLDING.md).
+
 ## Project → CAD → motion → drawing → package
 
 **Project** stores the brief, enclosure specification and requirements in the same immutable document revision as the feature tree, notes and motion configuration. Edit panel thickness, material or clear dimensions, then choose **Rebuild & save revision**. Every panel regenerates; engineering checks and drawings update. Failing requirements remain visible even when the geometry is valid. Custom feature edits require the explicit **Replace custom geometry** checkbox before panel regeneration. The previous revision stays in history.

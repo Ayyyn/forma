@@ -10,13 +10,20 @@ from __future__ import annotations
 
 from copy import deepcopy
 import html
+import base64
+import csv
+import io
 import json
 import math
 from pathlib import Path
 import re
+import textwrap
 
 import cadquery as cq
 import ezdxf
+from reportlab.pdfgen.canvas import Canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from .workspace_geometry import _bounds as exact_bounds_mm
 from OCP.BRepLib import BRepLib
 from OCP.GCPnts import GCPnts_QuasiUniformDeflection
@@ -31,6 +38,8 @@ SHEET_UNITS_PER_MM = SHEET_WIDTH / 420
 PDF_POINTS_PER_UNIT = 72 / 25.4 / SHEET_UNITS_PER_MM
 PDF_WIDTH, PDF_HEIGHT = 420 * 72 / 25.4, 297 * 72 / 25.4
 CURVE_DEFLECTION_MM = 0.02
+FONT_PATH = Path(__file__).with_name("web") / "vendor" / "FormaSans.ttf"
+pdfmetrics.registerFont(TTFont("FormaSans", str(FONT_PATH)))
 VIEWS = {
     "front": ((0, -1, 0), (1, 0, 0), (0, 2), "Front (X / Z)"),
     "top": ((0, 0, 1), (1, 0, 0), (0, 1), "Top (X / Y)"),
@@ -201,6 +210,16 @@ def drawing_data(doc, parts):
         },
         "annotation_coordinate_system": "1200 x 800 sheet SVG pixels; view is a grouping tag",
         "user_dimension_policy": "All user dimensions are REF annotations; they do not change or measure model geometry",
+        "feature_parameters": [
+            {
+                "id": f.get("id"),
+                "type": f.get("type"),
+                "name": f.get("name", f.get("type")),
+                "suppressed": f.get("suppressed", False),
+                "params": f.get("params", {}),
+            }
+            for f in doc.get("features", [])
+        ],
     }
 
 
@@ -239,7 +258,10 @@ def _scene(data):
             }
         )
 
-    text(40, 45, data["name"], 25)
+    title_size = min(
+        25, 25 * 1120 / max(1120, pdfmetrics.stringWidth(data["name"], "FormaSans", 25))
+    )
+    text(40, 45, data["name"], title_size)
     text(
         40, 76, "Orthographic BREP projections | dimensions in mm | review drawing", 15
     )
@@ -355,11 +377,22 @@ def _scene(data):
     return scene
 
 
-def _svg(data):
+def _svg(data, embed_font=False):
+    font_url = (
+        "data:font/ttf;base64," + base64.b64encode(FONT_PATH.read_bytes()).decode()
+        if embed_font
+        else "/assets/vendor/FormaSans.ttf"
+    )
     out = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="280mm" viewBox="0 0 1200 800">',
+        "<metadata>"
+        + html.escape(
+            FONT_PATH.with_name("FormaSans-LICENSE.txt").read_text(encoding="utf-8")
+        )
+        + "</metadata>",
         '<rect width="1200" height="800" fill="white"/>',
-        '<g font-family="Arial,sans-serif">',
+        f'<style>@font-face{{font-family:FormaSans;src:url("{font_url}")}}</style>',
+        '<g font-family="FormaSans,Arial,sans-serif">',
     ]
     for item in _scene(data):
         annotation = (
@@ -386,60 +419,205 @@ def drawing_svg(doc, parts):
 
 
 def _pdf(data):
-    # Shared vector scene, Helvetica selectable text; no SVG raster conversion.
-    def escape(text):
-        return (
-            text.encode("latin1", "replace")
-            .decode("latin1")
-            .replace("\\", "\\\\")
-            .replace("(", "\\(")
-            .replace(")", "\\)")
+    return _pdf_scenes([_scene(data), *_parameter_scenes(data)])
+
+
+def _pdf_scene(scene):
+    return _pdf_scenes([scene])
+
+
+def _pdf_scenes(scenes):
+    """Shared vector scene, embedded Unicode font and invariant PDF metadata."""
+    output = io.BytesIO()
+    canvas = Canvas(
+        output,
+        pagesize=(PDF_WIDTH, PDF_HEIGHT),
+        invariant=1,
+        pageCompression=1,
+        pdfVersion=(1, 4),
+    )
+    canvas.setCreator("Forma Studio / deterministic native drawings")
+    for scene in scenes:
+        canvas.saveState()
+        canvas.translate(0, (PDF_HEIGHT - SHEET_HEIGHT * PDF_POINTS_PER_UNIT) / 2)
+        canvas.scale(PDF_POINTS_PER_UNIT, PDF_POINTS_PER_UNIT)
+        for item in scene:
+            color = [int(item["color"][i : i + 2], 16) / 255 for i in (1, 3, 5)]
+            if item["type"] == "text":
+                canvas.setFillColorRGB(*color)
+                canvas.setFont("FormaSans", item["size"])
+                for row, value in enumerate(item["text"].splitlines() or [""]):
+                    canvas.drawString(
+                        item["x"], 800 - item["y"] - row * item["size"] * 1.2, value
+                    )
+            else:
+                canvas.setStrokeColorRGB(*color)
+                canvas.setLineWidth(item["width"])
+                canvas.setDash([5, 4] if item["hidden"] else [])
+                path = canvas.beginPath()
+                for i, (x, y) in enumerate(item["points"]):
+                    (path.moveTo if i == 0 else path.lineTo)(x, 800 - y)
+                canvas.drawPath(path, stroke=1, fill=0)
+        canvas.restoreState()
+        canvas.showPage()
+    canvas.save()
+    return output.getvalue()
+
+
+def _parameter_rows(data):
+    for feature in data.get("feature_parameters", []):
+        for key, value in feature["params"].items():
+            inactive = (
+                feature["type"] == "cut_hole"
+                and feature["params"].get("end_condition") == "through_all"
+                and key in ("depth", "z")
+            )
+            if feature["type"] == "folding_assembly":
+                family = feature["params"].get("family", "miura")
+                inactive = (
+                    key in ("rows", "columns", "sector_angle")
+                    and family != "miura"
+                    or key == "count"
+                    and family in ("miura", "cube_net")
+                    or key == "panel_height"
+                    and family == "cube_net"
+                )
+            if key in (
+                "rotation",
+                "sector_angle",
+                "fold_angle",
+                "pressure_angle",
+                "phase",
+                "cone_angle",
+                "bore_angle",
+            ):
+                unit = "deg; driver" if key == "fold_angle" else "deg"
+            elif key in (
+                "count",
+                "rows",
+                "columns",
+                "teeth",
+                "starts",
+                "addendum_coeff",
+                "dedendum_coeff",
+                "face_index",
+                "source_face",
+                "target_face",
+                "target",
+                "tool",
+            ):
+                unit = "dimensionless / index"
+            elif feature["type"] in ("spur_gear", "bevel_gear") and key in (
+                "clearance",
+                "backlash",
+            ):
+                unit = "coefficient"
+            elif isinstance(value, (bool, str, dict)) or value is None:
+                unit = "source value"
+            else:
+                unit = (
+                    "mm; nominal hinge pitch"
+                    if key in ("panel_width", "panel_height")
+                    else "mm"
+                )
+            inactive_reason = (
+                "through all"
+                if feature["type"] == "cut_hole"
+                else "unused in this family"
+            )
+            meaning = (
+                f"inactive ({inactive_reason}); "
+                if inactive
+                else "suppressed; " if feature["suppressed"] else ""
+            ) + unit
+            yield feature, key, json.dumps(
+                value, ensure_ascii=False, allow_nan=False
+            ), meaning
+
+
+def _parameter_scenes(data):
+    rows = list(_parameter_rows(data))
+    if not rows:
+        return []
+    scenes = []
+    scene = []
+    y = 0
+
+    def text(x, y, value, size=12):
+        scene.append(
+            dict(type="text", x=x, y=y, text=value, size=size, color="#243942")
         )
 
-    margin = (PDF_HEIGHT - SHEET_HEIGHT * PDF_POINTS_PER_UNIT) / 2
-    commands = [
-        f"q {PDF_POINTS_PER_UNIT:.10f} 0 0 {PDF_POINTS_PER_UNIT:.10f} 0 {margin:.10f} cm"
-    ]
-    for item in _scene(data):
-        color = [int(item["color"][i : i + 2], 16) / 255 for i in (1, 3, 5)]
-        rgb = " ".join(f"{c:.5f}" for c in color)
-        if item["type"] == "text":
-            commands.append(
-                f'{rgb} rg BT /F1 {item["size"]} Tf {item["x"]:g} {800-item["y"]:g} Td ({escape(item["text"])}) Tj ET'
-            )
-        else:
-            commands.append(
-                f'{rgb} RG {item["width"]} w '
-                + ("[5 4] 0 d" if item["hidden"] else "[] 0 d")
-            )
-            commands.append(
-                " ".join(
-                    f'{x:.8g} {800-y:.8g} {"m" if i==0 else "l"}'
-                    for i, (x, y) in enumerate(item["points"])
-                )
-                + " S"
-            )
-    commands.append("Q")
-    stream = "\n".join(commands).encode("latin1")
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PDF_WIDTH:.8f} {PDF_HEIGHT:.8f}] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".encode(),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream",
-    ]
-    out, offsets = bytearray(b"%PDF-1.4\n"), [0]
-    for i, obj in enumerate(objects, 1):
-        offsets.append(len(out))
-        out.extend(f"{i} 0 obj\n".encode() + obj + b"\nendobj\n")
-    start = len(out)
-    out.extend(f"xref\n0 {len(objects)+1}\n0000000000 65535 f \n".encode())
-    for offset in offsets[1:]:
-        out.extend(f"{offset:010d} 00000 n \n".encode())
-    out.extend(
-        f"trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{start}\n%%EOF\n".encode()
-    )
-    return bytes(out)
+    def page():
+        nonlocal scene, y
+        if scene:
+            scenes.append(scene)
+        scene = []
+        heading = "FEATURE PARAMETERS / " + data["name"]
+        text(
+            40,
+            45,
+            heading,
+            min(
+                20,
+                20 * 1120 / max(1120, pdfmetrics.stringWidth(heading, "FormaSans", 20)),
+            ),
+        )
+        text(
+            40,
+            77,
+            "Editable source values. Overall dimensions on page 1 are measured from native geometry.",
+            13,
+        )
+        text(
+            40,
+            100,
+            "Nominal hinge pitch, profile coordinates and explicit clearances are not interchangeable with the solid envelope.",
+            12,
+        )
+        text(
+            40,
+            770,
+            "Full editable feature history, annotations and project metadata: drawing-source.json / project.json",
+            11,
+        )
+        y = 140
+
+    page()
+    for feature, key, value, meaning in rows:
+        lines = []
+        remaining = value
+        while remaining:
+            if pdfmetrics.stringWidth(remaining, "FormaSans", 12) <= 1090:
+                lines.append(remaining)
+                break
+            width = 0
+            cut = 0
+            space = 0
+            for i, char in enumerate(remaining):
+                width += pdfmetrics.stringWidth(char, "FormaSans", 12)
+                if width > 1090:
+                    break
+                cut = i + 1
+                if char.isspace():
+                    space = cut
+            cut = space or cut
+            lines.append(remaining[:cut])
+            remaining = remaining[cut:]
+        lines = lines or [""]
+        if y + 34 > 740:
+            page()
+        text(40, y, f"{feature['id']} / {key}  [{meaning}]", 11)
+        y += 17
+        for line in lines:
+            if y > 735:
+                page()
+            text(55, y, line, 12)
+            y += 16
+        y += 8
+    if scene:
+        scenes.append(scene)
+    return scenes
 
 
 def _dxf(data, path):
@@ -539,11 +717,20 @@ def _dxf(data, path):
 
 def export_drawings(doc, parts, folder):
     """Export shared measured projections plus the full editable document source."""
+    doc = deepcopy(doc)
+    from .folding import specification as folding_specification
+
+    for feature in doc.get("features", []):
+        if feature.get("type") == "folding_assembly":
+            feature["params"] = folding_specification(feature.get("params", {}))
     data = drawing_data(doc, parts)
     source = json.dumps(doc, indent=2, ensure_ascii=False, allow_nan=False)
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "drawing.svg").write_text(_svg(data), encoding="utf-8")
+    (folder / "FONT-LICENSE.txt").write_bytes(
+        FONT_PATH.with_name("FormaSans-LICENSE.txt").read_bytes()
+    )
+    (folder / "drawing.svg").write_text(_svg(data, embed_font=True), encoding="utf-8")
     (folder / "drawing.pdf").write_bytes(_pdf(data))
     _dxf(data, folder / "drawing.dxf")
     (folder / "drawing-source.json").write_text(source, encoding="utf-8")
@@ -553,13 +740,34 @@ def export_drawings(doc, parts, folder):
         for key, view in data["views"].items()
     }
     metadata["pdf_text_encoding"] = (
-        "Helvetica Latin-1; unsupported glyphs replaced with ?. Full Unicode preserved in SVG and source JSON."
+        "Embedded DejaVu Sans; Unicode text and engineering symbols; full source values in the parameter appendix and JSON"
     )
+    with (folder / "design-parameters.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as output:
+        writer = csv.writer(output)
+        writer.writerow(
+            ["feature_id", "feature_type", "parameter", "source_value", "meaning"]
+        )
+
+        def safe(value):
+            value = str(value)
+            return (
+                "'" + value
+                if value.startswith(("=", "+", "-", "@", "\t", "\r", "\n"))
+                else value
+            )
+
+        for feature, key, value, meaning in _parameter_rows(data):
+            writer.writerow(
+                [safe(feature["id"]), safe(feature["type"]), safe(key), value, meaning]
+            )
     (folder / "drawing-measurements.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     return {
         "files": [
+            "design-parameters.csv",
             "drawing.svg",
             "drawing.pdf",
             "drawing.dxf",

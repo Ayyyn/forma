@@ -23,7 +23,7 @@ Manual editing, deterministic optimization and exports work without credentials.
 - Enclosure stock optimization with selectable feasible alternatives.
 - Geometry-derived drawings; STEP, STL, DXF, SVG, PDF and portable JSON exports.
 - Shared brief, enclosure specification and requirements inside Studio; deterministic panel regeneration and revision-bound checks.
-- Finite-thickness wall folding with local playback, sampled overlap checks and envelope plots.
+- Finite-thickness enclosure studies and five articulated folding families with real hinges/pins, sampled native-solid checks and prepared print packs.
 - Large stage canvas with pan/zoom, minimap and model overview.
 - Separate flat panel STEP/STL components and revision-bound workflow reports in the export package.
 - Exact CAD/proposal reuse, duplicate-request coalescing, and an explicit New proposal option.
@@ -32,7 +32,7 @@ Caching measurements and the rejected experimental planner policy are documented
 
 [Shared workflow and physical mockup guide](docs/FORMA_WORKFLOW.md) · [Studio capabilities and limits](docs/FORMA_STUDIO.md) · [Implementation plan](docs/FORMA_BUILD_PLAN.md) · [Demo](docs/FORMA_DEMO.md)
 
-The supported enclosure load check is an ideal beam-deflection screen. General FEA, engineered hinge hardware and physical validation are still pending. Wall folding is a prescribed rigid-panel motion with sampled thickness-aware overlap checks. The separate `continuum` prototype contains ideal Miura/accordion kinematics; it is not yet integrated with Studio.
+The supported enclosure load check is an ideal beam-deflection screen. Studio now includes native articulated Miura, concertina, open annular fan, triangle-strip and staged cube-net mechanisms with bored hinges and removable pins. Motion checks are sampled prescribed rigid kinematics; general origami, FEA, friction, fatigue, pin retention and actual physical fit remain outside that qualification. See [folding, printing and 3D import](docs/FORMA_FOLDING.md) for supported workflows and limits. The independent `continuum` research prototype retains its own scope and evidence.
 
 ## Verify
 

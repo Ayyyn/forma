@@ -363,7 +363,18 @@ export function createWorkflow(bridge) {
     clearGroup();
     study = value;
     group = new THREE.Group();
-    value.panels.forEach((p, i) => {
+    if (value.family === "panel_hinges") {
+      value.parts.forEach((p,i) => {
+        const geometry=new THREE.BufferGeometry();
+        geometry.setAttribute("position",new THREE.Float32BufferAttribute(p.vertices,3));
+        geometry.setIndex(p.triangles); geometry.computeVertexNormals();
+        const color=p.kind==="pin" ? 0xa87a3e : [0xb7c9d1,0x91adb7,0xc8b89d][p.face%3];
+        const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color,roughness:.65}));
+        mesh.userData={part:p,baseColor:color};mesh.matrixAutoUpdate=false;
+        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:0x46565d,transparent:true,opacity:.45})));
+        group.add(mesh);
+      });
+    } else value.panels.forEach((p, i) => {
       const pivot = new THREE.Group();
       pivot.position.fromArray(p.pivot_mm);
       pivot.userData.panel = p;
@@ -390,11 +401,13 @@ export function createWorkflow(bridge) {
     });
     scene.add(group);
     $("#motion-angle").max = value.config.max_angle_deg;
+    $("#motion-angle").step = value.family==="panel_hinges" ? value.config.max_angle_deg/(value.frames.length-1) : .1;
     $("#motion-angle").disabled = false;
     $("#motion-play").disabled = false;
     $("#motion-save").disabled = false;
-    $("#motion-state").textContent =
-      `${value.frames.length} sampled poses · ${value.sampled_overlap_free ? "No panel overlap detected" : "Overlap detected in " + value.collision_sample_count + " poses"}`;
+    $("#motion-state").textContent = value.family === "panel_hinges"
+      ? `${value.frames.length} sampled poses · ${value.passed ? "Geometry checks passed" : "Geometry issues detected"}`
+      : `${value.frames.length} sampled poses · ${value.sampled_overlap_free ? "No panel overlap detected" : "Overlap detected in " + value.collision_sample_count + " poses"}`;
     $("#motion-scope").textContent = value.scope;
     drawChart();
     updateAngle(0);
@@ -407,6 +420,19 @@ export function createWorkflow(bridge) {
     $("#motion-angle").value = angle;
     $("#motion-angle-label").textContent = num(angle) + "°";
     if (!study || !group) return;
+    if (study.family==="panel_hinges") {
+      const frame=study.frames.reduce((a,b)=>Math.abs(b.angle_deg-angle)<Math.abs(a.angle_deg-angle)?b:a);
+      $("#motion-angle").value=frame.angle_deg;
+      $("#motion-angle-label").textContent=num(frame.angle_deg)+"°";
+      group.children.forEach(mesh=>{
+        const part=mesh.userData.part;
+        mesh.matrix.set(...frame.pose_matrices[part.face].flat());
+        mesh.matrixWorldNeedsUpdate=true;
+        mesh.material.color.set(frame.overlaps.flat().includes(part.id)?0xc06450:mesh.userData.baseColor);
+      });
+      $("#motion-metrics").textContent=`Checked pose ${num(frame.angle_deg)}° · ${frame.extent_mm.map(v=>num(v)).join(" × ")} mm · ${frame.overlaps.length ? "Solid interference: "+frame.overlaps.map(p=>p.join(" / ")).join(", ") : "No native solid overlap"} · hinge closure ${frame.axis_closure_error_mm.toExponential(1)} mm`;
+      return;
+    }
     group.children.forEach((pivot) => {
       const p = pivot.userData.panel;
       pivot.rotation[p.axis] = THREE.MathUtils.degToRad(angle * p.direction);
@@ -440,15 +466,15 @@ export function createWorkflow(bridge) {
   $("#motion-run").onclick = () =>
     runTask(async () => {
       const base = context();
-      $("#motion-state").textContent = "Checking wall motion…";
+      $("#motion-state").textContent = "Checking native folding geometry…";
       const value = await bridge.api("/motion", {
         document: bridge.getState().document,
         config: {
-          family: "enclosure_walls",
+          family: snapshot.folding ? "panel_hinges" : "enclosure_walls",
           max_angle_deg: Number($("#motion-max").value),
           samples: Number($("#motion-samples").value),
         },
-      });
+      }, Number($("#motion-samples").value)>73 ? 600000 : 180000);
       if (base !== context())
         throw new Error("Geometry changed during simulation. Run again.");
       studyKey = value.geometry_signature;
@@ -518,6 +544,9 @@ export function createWorkflow(bridge) {
     const checks = r?.checks || [];
     const failed = checks.filter((c) => c.status === "fail").length;
     const modelImage = bridge.modelImage?.();
+    const fold=snapshot.folding, p=fold?.spec;
+    const foldFeature=d.features.find(f=>f.type==="folding_assembly"&&!f.suppressed);
+    const enclosure=Boolean(meta.source_spec&&meta.source_requirements);
     const stages = [
       {
         title: "Brief",
@@ -527,18 +556,20 @@ export function createWorkflow(bridge) {
         action: "Edit brief",
       },
       {
-        title: "Requirements",
-        tag: "02 · CONTRACT",
-        tab: "project",
-        content: `<span class="canvas-badge ${r?.status === "stale" || failed ? "warning" : ""}">${escape(r?.status || "unbound")}${failed ? " · " + failed + " failing" : ""}</span><p>${meta.source_spec ? `${escape(meta.source_spec.material.replaceAll("_", " "))} · ${num(meta.source_spec.thickness_mm)} mm panels` : "Attach an enclosure contract in Project."}</p><p>${meta.source_requirements ? `Capacity ≥ ${num(meta.source_requirements.min_capacity_l, 2)} L<br>Mass ≤ ${num(meta.source_requirements.max_mass_kg, 2)} kg` : "Geometry validity is checked independently."}</p>`,
-        action: "Edit requirements",
+        title: fold ? "Folding parameters" : enclosure ? "Requirements" : "Design definition",
+        tag: enclosure ? "02 · CONTRACT" : "02 · DEFINITION",
+        tab: enclosure ? "project" : "model",
+        feature: foldFeature?.id,
+        content: fold ? `<span class="canvas-badge">${escape(fold.family.replaceAll("_"," "))} · ${fold.panel_count} panels</span><p>Nominal pitch ${num(p.panel_width)}${p.family==="cube_net" ? "" : " × "+num(p.panel_height)} mm<br>Panel thickness ${num(p.thickness)} mm</p><p>Pin Ø ${num(p.pin_diameter)} · bore Ø ${num(p.pin_diameter+2*p.radial_clearance)} mm<br>Radial gap ${num(p.radial_clearance,2)} · end gap ${num(p.axial_clearance,2)} mm</p>` : enclosure ? `<span class="canvas-badge ${r?.status === "stale" || failed ? "warning" : ""}">${escape(r?.status || "unbound")}${failed ? " · " + failed + " failing" : ""}</span><p>${escape(meta.source_spec.material.replaceAll("_", " "))} · ${num(meta.source_spec.thickness_mm)} mm panels</p><p>Capacity ≥ ${num(meta.source_requirements.min_capacity_l, 2)} L<br>Mass ≤ ${num(meta.source_requirements.max_mass_kg, 2)} kg</p>` : `<p>${d.features.length} editable features · ${snapshot.metrics?.solid_count || 0} solids.</p><p>Inspect source dimensions in the feature editor. Geometry validity is checked independently; review the brief's functional requirements separately.</p>`,
+        action: enclosure ? "Edit requirements" : "Edit parameters",
       },
       {
-        title: "Design options",
-        tag: "03 · EXPLORE",
-        tab: "project",
-        content: `<p>Compare feasible stock sizes against the same requirements.</p><p>Lock clear dimensions or allow resizing within the envelope.</p>`,
-        action: "Compare designs",
+        title: enclosure ? "Design options" : fold ? "Refine folding" : "Refine geometry",
+        tag: enclosure ? "03 · EXPLORE" : "03 · REFINE",
+        tab: enclosure ? "project" : "model",
+        feature: foldFeature?.id,
+        content: enclosure ? `<p>Compare feasible stock sizes against the same requirements.</p><p>Lock clear dimensions or allow resizing within the envelope.</p>` : fold ? `<p>Edit panel thickness, hinge clearances, setback and driver angle in the feature inspector, or request a reviewed Meta revision.</p><p>Rerun Motion after geometry edits. Use the print pack for separated components and a fit coupon.</p>` : `<p>Edit native features, add supported operations to an imported solid, or request a reviewed Meta revision.</p><p>Save revisions to preserve your design history.</p>`,
+        action: enclosure ? "Compare designs" : "Open feature editor",
       },
       {
         title: "Editable CAD",
@@ -548,10 +579,10 @@ export function createWorkflow(bridge) {
         action: "Open model",
       },
       {
-        title: "Wall motion",
+        title: snapshot.folding ? "Folding motion" : "Wall motion",
         tag: "05 · SIMULATION",
         tab: "motion",
-        content: `<span class="canvas-badge">${study && studyKey === snapshot.geometry_signature ? "Current session study" : "Run study"}</span><p>${study && studyKey === snapshot.geometry_signature ? `${study.frames.length} sampled poses<br>${study.sampled_overlap_free ? "No sampled panel overlap" : "Overlap detected"}` : "Finite-thickness enclosure walls with explicit virtual hinges."}</p><p>Hardware and loads require separate validation.</p>`,
+        content: `<span class="canvas-badge">${study && studyKey === snapshot.geometry_signature ? "Current session study" : "Run study"}</span><p>${study && studyKey === snapshot.geometry_signature ? `${study.frames.length} sampled poses<br>${study.sampled_overlap_free ? "No sampled panel overlap" : "Overlap detected"}` : snapshot.folding ? "Rigid panels, real hinge barrels and removable pins." : "Finite-thickness enclosure walls with explicit virtual hinges."}</p><p>Loads and physical fit require separate validation.</p>`,
         action: "Open simulation",
       },
       {
@@ -565,7 +596,7 @@ export function createWorkflow(bridge) {
     $("#workflow-cards").innerHTML = stages
       .map(
         (s, i) =>
-          `<article class="workflow-stage-card" style="left:${70 + i * 500}px;top:${i % 2 ? 240 : 110}px" data-canvas-stage="${s.tab}"><small>${s.tag}</small><h2>${s.title}</h2><div class="workflow-card-content">${s.content}</div><button data-tab="${s.tab}">${s.action} ↗</button></article>`,
+          `<article class="workflow-stage-card" style="left:${70 + i * 500}px;top:${i % 2 ? 240 : 110}px" data-canvas-stage="${s.tab}"><small>${s.tag}</small><h2>${s.title}</h2><div class="workflow-card-content">${s.content}</div><button data-tab="${s.tab}"${s.feature ? ` data-feature="${escape(s.feature)}"` : ""}>${s.action} ↗</button></article>`,
       )
       .join("");
     $("#canvas-map-cards").innerHTML = stages
@@ -687,6 +718,22 @@ export function createWorkflow(bridge) {
   return {
     update(value) {
       snapshot = value;
+      $("#motion-tab h1").textContent=value.folding ? value.folding.family.replaceAll("_"," ").replace(/^./,c=>c.toUpperCase())+" folding" : "Wall folding";
+      const samplesControl=$("#motion-samples");
+      for (const count of [181,361,721]) {
+        let option=Array.from(samplesControl.options).find(o=>o.value===String(count));
+        if (!option) { option=document.createElement("option");option.value=count;option.textContent=String(count);samplesControl.append(option); }
+        option.disabled=option.hidden=!value.folding;
+      }
+      if (!value.folding && Number(samplesControl.value)>73) samplesControl.value=37;
+      $("#motion-chart").setAttribute("aria-label","Outside envelope through sampled motion");
+      if (!study) $("#motion-metrics").textContent="Simulation is bound to the current CAD revision.";
+      $("#motion-angle").parentElement.firstChild.textContent=value.folding ? "Driver angle " : "Wall angle ";
+      $("#motion-max").max=value.folding?.absolute_limit_deg || 90;
+      if (!study && !value.document.metadata?.motion && value.folding) {
+        $("#motion-max").value=value.folding.default_limit_deg;
+        $("#motion-samples").value=73;
+      }
       if (!study && value.document.metadata?.motion) {
         $("#motion-max").value = value.document.metadata.motion.max_angle_deg;
         $("#motion-samples").value = value.document.metadata.motion.samples;
@@ -704,7 +751,7 @@ export function createWorkflow(bridge) {
       }
       const binding = value.requirements_state?.status || "unbound";
       if (!study) {
-        $("#motion-state").textContent =
+        $("#motion-state").textContent = value.folding ? "Ready to check real panels, pins and hinge alignment." :
           binding === "current"
             ? value.document.metadata.source_spec.lid
               ? "Remove the top panel in Project before running wall motion."

@@ -65,6 +65,20 @@ let THREE,
 const sketch = { scale: 3, cx: 0, cy: 0, width: 0, height: 0 };
 
 const definitions = {
+  folding_assembly: {
+    label: "Folding assembly", icon: "⋈",
+    params: { family:"miura",columns:3,rows:3,count:8,panel_width:40,panel_height:44,sector_angle:60,
+      thickness:1.6,pin_diameter:2,radial_clearance:.25,axial_clearance:.35,hinge_radius:2.2,panel_inset:5,fold_angle:0 },
+    fields: [
+      ["family","Structure","select",["miura","concertina","radial_fan","triangle_strip","cube_net"]],
+      ["columns","Columns","number"],["rows","Rows","number"],["count","Panels","number"],
+      ["panel_width","Hinge pitch X","number"],["panel_height","Hinge pitch Y","number"],
+      ["sector_angle","Sector angle","number"],["thickness","Panel thickness","number"],
+      ["pin_diameter","Pin diameter","number"],["radial_clearance","Radial clearance","number"],
+      ["axial_clearance","Knuckle end clearance","number"],["hinge_radius","Barrel radius","number"],
+      ["panel_inset","Panel setback","number"],["fold_angle","Preview driver angle","number"],
+    ],
+  },
   box: {
     label: "Box",
     icon: "▣",
@@ -216,7 +230,7 @@ const definitions = {
   },
 
   import_step: {
-    label: "Imported STEP",
+    label: "Imported solid",
     icon: "⬡",
     params: {},
     fields: [["asset_id", "Source asset", "readonly"]],
@@ -258,6 +272,7 @@ Object.assign(definitions, {
 });
 
 const scope = {
+  folding_assembly: "Nominal hinge pitches and explicit setbacks define the solid panels. Preview driver angle is not each joint's dihedral. Use Motion for sampled interference checks and Print pack for separate components.",
   spur_gear: "Native involute gear. Position is the bottom centre before axis rotation. Phase rotates teeth independently of the bore.",
   bevel_gear: "Position is the pitch cone apex. Axis points from the large base towards the apex. Mating gears share an apex; verify actual clearance and motion.",
   threaded_body: "Real helical geometry, clipped to its length. Lead equals pitch times starts. Internal clearance is radial. Geometric fit is not a manufacturing qualification.",
@@ -407,11 +422,11 @@ function renderTools() {
     setTab("sketch");
     setSketchTool("rectangle");
   });
-  const exports = ["step", "stl", "json", "svg", "pdf", "dxf", "csv", "bundle"];
+  const exports = ["step", "stl", "json", "svg", "pdf", "dxf", "csv", "bundle", "print"];
   $("#export-menu").innerHTML = exports
     .map(
       (f) =>
-        `<button data-export="${f}">${{ step: "Solid geometry", stl: "Triangle mesh", json: "Portable project", svg: "Review drawing", pdf: "Drawing PDF", dxf: "Drawing DXF", csv: "Body list", bundle: "Design package" }[f]}<small>${f.toUpperCase()}</small></button>`,
+        `<button data-export="${f}">${{ step: "Solid geometry", stl: "Triangle mesh", json: "Portable project", svg: "Review drawing", pdf: "Drawing PDF", dxf: "Drawing DXF", csv: "Body list", bundle: "Design package", print: "Folding print pack" }[f]}<small>${f==="print"?"ZIP":f.toUpperCase()}</small></button>`,
     )
     .join("");
   $$('[data-sketch-tool="rectangle"],[data-sketch-tool="circle"]').forEach(
@@ -451,6 +466,12 @@ function renderInspector() {
   if (f.type === "cut_hole" && !f.params.end_condition)
     def.params = { ...def.params, end_condition: "blind" };
   const fields = def.fields.filter(([key]) => {
+    if (f.type === "folding_assembly") {
+      const family=f.params.family || "miura";
+      if (["columns","rows","sector_angle"].includes(key) && family!=="miura") return false;
+      if (key==="count" && ["miura","cube_net"].includes(family)) return false;
+      if (key==="panel_height" && family==="cube_net") return false;
+    }
     if (f.type === "cut_hole" && f.params.end_condition === "through_all" && ["depth", "z"].includes(key))
       return false;
     if (
@@ -496,6 +517,9 @@ function renderInspector() {
     readFeatureForm(f);
     renderInspector();
   });
+  $('[data-param="family"]')?.addEventListener("change", () => {
+    readFeatureForm(f); renderInspector();
+  });
   wireSelection();
 }
 
@@ -504,11 +528,12 @@ function fieldHTML([key, label, type, options], params) {
   const optional = type === "optional-number";
   if (optional) type = "number";
   const unit =
-    ["rotation", "phase", "pressure_angle", "cone_angle", "bore_angle"].includes(key)
+    ["rotation", "phase", "pressure_angle", "cone_angle", "bore_angle", "sector_angle", "fold_angle"].includes(key)
       ? "deg"
       : type === "number" && !label.endsWith("coefficient") &&
           ![
             "count",
+            "rows", "columns",
             "teeth",
             "starts",
             "addendum_coeff",
@@ -835,6 +860,7 @@ function setTab(tab) {
   workflow?.tabChanged(tab);
   if (tab === "model") resize3D();
   if (tab === "sketch") {
+    if (state.snapshot.folding) $("#sketch-help").textContent="Nominal hinge-axis map. Edit the folding feature; physical panel and barrel outlines are in Drawing and Print pack.";
     resizeSketch();
     drawSketch();
     renderAnnotations();
@@ -1146,7 +1172,7 @@ function fitView(view) {
     ],
     c = b[0].map((v, i) => (v + b[1][i]) / 2),
     sizes = b[1].map((v, i) => v - b[0][i]);
-  const radius = Math.max(Math.hypot(...sizes) / 2, 30),
+  const radius = Math.max(Math.hypot(...sizes) / 2, 0.5),
     v = THREE.MathUtils.degToRad(camera.fov),
     h = 2 * Math.atan(Math.tan(v / 2) * camera.aspect),
     distance =
@@ -1412,6 +1438,11 @@ function drawSketch() {
   for (const f of state.document?.features || []) {
     if (f.type === "sketch_extrude" && !f.suppressed)
       drawProfile(ctx, f.params, f.id === state.feature);
+    if (f.type === "folding_assembly" && !f.suppressed && state.snapshot.folding) {
+      const graph=state.snapshot.folding.graph;
+      for (const face of graph.faces)
+        drawProfile(ctx,{shape:"polyline",points:face.map(i=>graph.vertices[i])},f.id===state.feature);
+    }
   }
   if (drawDrag && drawDrag.tool !== "pan") {
     const [a, b] = [drawDrag.start, drawDrag.end];
@@ -1498,9 +1529,13 @@ canvas.addEventListener("pointerdown", (e) => {
   }
   if (state.sketchTool === "select") {
     const candidates = state.document.features.filter(
-      (f) => f.type === "sketch_extrude" && !f.suppressed,
+      (f) => ["sketch_extrude","folding_assembly"].includes(f.type) && !f.suppressed,
     );
-    const hit = candidates.reverse().find((f) => profileContains(f.params, ...world));
+    const hit = candidates.reverse().find((f) => {
+      if (f.type!=="folding_assembly") return profileContains(f.params,...world);
+      const graph=state.snapshot.folding?.graph;
+      return graph?.faces.some(face=>profileContains({shape:"polyline",points:face.map(i=>graph.vertices[i])},...world));
+    });
     if (hit) {
       selectFeature(hit.id);
       drawSketch();
@@ -2038,7 +2073,7 @@ async function exportDocument(format) {
     );
     a.download =
       match?.[1] ||
-      `${state.document.name || "design"}.${format === "bundle" ? "zip" : format}`;
+      `${state.document.name || "design"}.${["bundle","print"].includes(format) ? "zip" : format}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     status("Export downloaded");
@@ -2048,7 +2083,7 @@ async function exportDocument(format) {
   }
 }
 
-async function importFile(file) {
+async function importFile(file, meshUnits) {
   if (!file || state.busy) return;
   if (file.size > 15_000_000) {
     toast("Import supports files up to 15 MB.", true);
@@ -2064,6 +2099,7 @@ async function importFile(file) {
     const result = await api("/import", {
       filename: file.name,
       content_base64: btoa(str),
+      mesh_units: meshUnits,
       parent_id: state.snapshot?.id,
     });
     useSnapshot(result);
@@ -2106,7 +2142,16 @@ document.addEventListener("click", async (e) => {
   const view = target.closest("[data-view]");
   if (view) fitView(view.dataset.view);
   const ex = target.closest("[data-export]");
-  if (ex) exportDocument(ex.dataset.export);
+  if (ex) {
+    if (ex.dataset.export!=="print") exportDocument(ex.dataset.export);
+    else if (!state.snapshot.folding) toast("Choose a folding assembly for articulated print preparation. Other models export as STL.",true);
+    else if (state.pending || state.inspectorDirty || state.agentPreview) toast("Save or discard parameter edits before preparing a print pack.",true);
+    else {
+      const p=state.document.metadata?.print_settings || {};
+      for (const [id,key,fallback] of [["print-printer","printer_name","Unspecified"],["print-width","bed_width_mm",220],["print-depth","bed_depth_mm",220],["print-height","bed_height_mm",220],["print-nozzle","nozzle_mm",.4],["print-layer","layer_height_mm",.2],["print-material","material","PLA"]]) $("#"+id).value=p[key]??fallback;
+      $("#print-settings-dialog").showModal();
+    }
+  }
   const ver = target.closest("[data-version]");
   if (ver && !state.busy) {
     try {
@@ -2223,9 +2268,32 @@ $("#new-document-explorer").addEventListener("click", () => {
 $("#import-document").addEventListener("click", () =>
   $("#import-file").click(),
 );
+let pendingMeshFile = null;
 $("#import-file").addEventListener("change", (e) => {
-  importFile(e.target.files[0]);
+  const file=e.target.files[0];
+  if (file && /\.(stl|obj)$/i.test(file.name)) {
+    pendingMeshFile=file;
+    $("#mesh-import-filename").textContent=file.name+" · confirm its original units";
+    $("#mesh-import-dialog").showModal();
+  } else importFile(file);
   e.target.value = "";
+});
+$("#print-confirm").addEventListener("click",async()=>{
+  if (state.busy) return;
+  state.document.metadata ||= {};
+  state.document.metadata.print_settings={printer_name:$("#print-printer").value.trim(),
+    bed_width_mm:Number($("#print-width").value),bed_depth_mm:Number($("#print-depth").value),bed_height_mm:Number($("#print-height").value),
+    nozzle_mm:Number($("#print-nozzle").value),layer_height_mm:Number($("#print-layer").value),material:$("#print-material").value.trim()};
+  if (await commitDocument("Update print settings")) {
+    $("#print-settings-dialog").close();
+    await exportDocument("print");
+  }
+});
+$("#mesh-import-confirm").addEventListener("click",()=>{
+  const file=pendingMeshFile;pendingMeshFile=null;
+  const units=$("#mesh-import-units").value;
+  $("#mesh-import-dialog").close();
+  importFile(file,units);
 });
 $("#sketch-plus").addEventListener("click", () => {
   sketch.scale = Math.min(40, sketch.scale * 1.25);
