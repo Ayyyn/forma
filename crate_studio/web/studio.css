@@ -1568,3 +1568,21 @@ dialog h2 {
 .section-title {
   color: #596b81;
 }
+.native-preview-dialog{width:min(1100px,96vw);height:min(760px,92vh);padding:0;border:1px solid #d9ded9;border-radius:10px;overflow:hidden;background:#f6f4ef}
+.native-preview-dialog::backdrop{background:#172b3245}
+.native-preview-dialog>header{height:52px;display:flex;align-items:center;gap:14px;padding:10px 16px;background:#fff;border-bottom:1px solid #d9ded9}
+.native-preview-dialog>header span{font-size:11px;color:#74817a;flex:1}
+.native-preview-dialog iframe{width:100%;height:calc(100% - 52px);border:0}
+#component-dialog {width:min(800px,94vw);padding:24px;}
+.dialog-heading {display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;}
+.dialog-heading h2 {margin:0;font-size:18px;}
+.component-layout {display:grid;grid-template-columns:260px 1fr;gap:28px;min-height:420px;}
+.component-layout aside {border-right:1px solid var(--border,#d9d5ce);padding-right:20px;}
+.component-layout input[type=search] {width:100%;padding:10px;border:1px solid #d5d2cb;border-radius:6px;margin-bottom:12px;}
+#component-list {max-height:380px;overflow:auto;}
+.component-row {display:block;width:100%;text-align:left;padding:12px 10px;margin:3px 0;border:1px solid transparent;background:transparent;white-space:normal;}
+.component-row small {display:block;font-size:10px;color:#777;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em;}
+.component-row.active {border-color:#b5b5a9;background:#efeee8;}
+#component-file {margin-top:16px;white-space:normal;}
+#component-source {overflow-wrap:anywhere;}
+@media(max-width:650px){.component-layout{grid-template-columns:1fr}.component-layout aside{border:0;padding:0}#component-list{max-height:160px}}

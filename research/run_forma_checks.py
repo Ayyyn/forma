@@ -4,6 +4,8 @@ import subprocess
 import sys
 
 MODULES = (
+    "test_budget",
+    "test_component_library",
     "test_crate_agent",
     "test_crate_engine",
     "test_crate_exports",

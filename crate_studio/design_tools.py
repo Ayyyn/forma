@@ -31,6 +31,7 @@ TOOL_VERSION = hashlib.sha256(
             "workspace_agent.py",
             "workspace_drawing.py",
             "workspace_workflow.py",
+            "component_library.py",
         )
     )
     + Path(__file__).with_name("web").joinpath("vendor", "FormaSans.ttf").read_bytes()
@@ -134,6 +135,36 @@ def report_key(name, arguments):
 
 def tool_definitions():
     rows = [
+        (
+            "search_components",
+            "Search the curated source-pinned hardware/electronics library. Returns actual supported sizes and parameters. Geometry references only; no electrical simulation or supplier tolerance qualification.",
+            _object({"query": _STRING}),
+        ),
+        (
+            "insert_component",
+            "Insert or edit a curated component in an isolated candidate, preserving existing features. Use a returned catalog_id and supported parameters; feature_id=null inserts, an existing library feature ID edits that instance. Rotation is world X,Y,Z degrees followed by translation mm. Check alignment/interference/exports after insertion. Quote must be an exact substring of original instruction authorizing the component.",
+            _object(
+                {
+                    "base_candidate_id": _STRING,
+                    "catalog_id": _STRING,
+                    "parameters": {"type": "object"},
+                    "translation": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 3,
+                        "maxItems": 3,
+                    },
+                    "rotation": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 3,
+                        "maxItems": 3,
+                    },
+                    "feature_id": {"type": ["string", "null"]},
+                    "quote": _STRING,
+                }
+            ),
+        ),
         (
             "probe_prismatic_pair",
             "Probe six directions of one actual parent/child prismatic interface in one named state, isolating it from unrelated corners. Batches both axial signs and four orthogonal transverse probes. Useful for guide diagnostics; blockage alone is not proof of manufactured guidance, global captivity or locks. Use at separated and compact states, alongside whole-assembly interference/motion.",
@@ -321,9 +352,11 @@ def tool_definitions():
             "type": "function",
             "function": {
                 "name": name,
-                "description": description + (
+                "description": description
+                + (
                     " Send mechanism_spec:{} to reuse this exact candidate's latest recorded check_motion spec; unavailable on a new/changed candidate until checked. This avoids repeating the complete mechanism in every diagnostic. Explicit specs remain supported."
-                    if "mechanism_spec" in schema.get("properties", {}) else ""
+                    if "mechanism_spec" in schema.get("properties", {})
+                    else ""
                 ),
                 "parameters": schema,
             },
@@ -361,12 +394,19 @@ MECHANISM_REFERENCE = {
 
 class DesignSession:
     def __init__(
-        self, document, instruction, folder, asset_loader=None, geometry_lock=None
+        self,
+        document,
+        instruction,
+        folder,
+        asset_loader=None,
+        geometry_lock=None,
+        component_store=None,
     ):
         self.instruction = instruction
         self.folder = Path(folder)
         self.asset_loader = asset_loader
         self.geometry_lock = geometry_lock
+        self.component_store = component_store
         self.candidates = {
             "base": {
                 "document": deepcopy(document),
@@ -442,9 +482,13 @@ class DesignSession:
                     self.reports.pop(referenced, None)
                 self.asset_keys[referenced] = deepcopy(assets)
             if arguments.get("mechanism_spec") == {}:
-                recorded = self.reports.get(referenced, {}).get("motion", {}).get("spec")
+                recorded = (
+                    self.reports.get(referenced, {}).get("motion", {}).get("spec")
+                )
                 if recorded is None:
-                    raise ValueError("Run check_motion on this exact candidate before using mechanism_spec:{}")
+                    raise ValueError(
+                        "Run check_motion on this exact candidate before using mechanism_spec:{}"
+                    )
                 arguments = {**arguments, "mechanism_spec": deepcopy(recorded)}
             key = hashlib.sha256(
                 json.dumps(
@@ -499,6 +543,23 @@ class DesignSession:
         return result
 
     def _dispatch(self, name, a):
+        if name == "search_components":
+            from .component_library import catalog
+
+            if not isinstance(a["query"], str) or len(a["query"]) > 300:
+                raise ValueError("Search query must contain at most 300 characters")
+            words = a["query"].lower().split()
+            return {
+                "components": [
+                    row
+                    for row in catalog()
+                    if all(
+                        word in (row["name"] + " " + row["category"]).lower()
+                        for word in words
+                    )
+                ],
+                "insertion_available": self.component_store is not None,
+            }
         if name == "record_strategy":
             options = a["alternatives"]
             if (
@@ -555,13 +616,85 @@ class DesignSession:
             }
         if name == "mechanism_reference":
             return deepcopy(MECHANISM_REFERENCE)
-        if name == "draft_candidate":
+        if name in ("draft_candidate", "insert_component"):
             if len(self.candidates) >= 13:
                 raise ValueError("Session supports at most twelve trial candidates")
             base = self._candidate(a["base_candidate_id"])
-            proposal = wa.apply_plan(
-                base["document"], a["plan"], self.instruction, self.asset_loader
-            )
+            if name == "draft_candidate":
+                proposal = wa.apply_plan(
+                    base["document"], a["plan"], self.instruction, self.asset_loader
+                )
+            else:
+                from .component_library import materialize, insert
+
+                if self.component_store is None or self.asset_loader is None:
+                    raise ValueError(
+                        "Library asset storage is unavailable in this session"
+                    )
+                if (
+                    not isinstance(a["quote"], str)
+                    or not a["quote"].strip()
+                    or a["quote"] not in self.instruction
+                ):
+                    raise ValueError(
+                        "Component insertion requires an exact authorizing instruction quote"
+                    )
+                record = materialize(
+                    a["catalog_id"],
+                    a["parameters"],
+                    self.folder.parent / "component-cache",
+                    self.component_store,
+                )
+                doc, feature_id = insert(
+                    base["document"],
+                    record,
+                    a["translation"],
+                    a["rotation"],
+                    a["feature_id"],
+                )
+                if a["feature_id"] is None:
+                    stable_id = (
+                        "component-"
+                        + hashlib.sha256(
+                            json.dumps(
+                                [
+                                    base["document"],
+                                    record,
+                                    a["translation"],
+                                    a["rotation"],
+                                ],
+                                sort_keys=True,
+                                allow_nan=False,
+                            ).encode()
+                        ).hexdigest()[:12]
+                    )
+                    doc["features"][-1]["id"] = stable_id
+                    doc["metadata"]["component_instances"][stable_id] = doc["metadata"][
+                        "component_instances"
+                    ].pop(feature_id)
+                    feature_id = stable_id
+                if not base["document"].get("features"):
+                    doc["metadata"].setdefault("brief", self.instruction)
+                result = cached_build(doc, self.asset_loader)
+                if not result["checks"]["passed"]:
+                    raise ValueError("Component candidate failed native regeneration")
+                proposal = {
+                    "document": doc,
+                    "status": "ready",
+                    "summary": "Library component · " + record["name"],
+                    "questions": [],
+                    "evidence": [{"quote": a["quote"]}],
+                    "result": wa._public_result(result),
+                    "changes": [
+                        {
+                            "action": "component",
+                            "id": feature_id,
+                            "catalog_id": record["catalog_id"],
+                            "parameters": record["parameters"],
+                            "summary": ("Edit" if a["feature_id"] else "Insert") + " library component · " + record["name"],
+                        }
+                    ],
+                }
             ident = (
                 "candidate-"
                 + hashlib.sha256(
@@ -1028,8 +1161,12 @@ class DesignSession:
             # in source order can paint a rear floor over a nearer wall/pin.
             ax.add_collection3d(
                 Poly3DCollection(
-                    all_faces, facecolors=face_colors, zsort="average",
-                    edgecolor="#4b5a60", linewidth=0.15, alpha=1,
+                    all_faces,
+                    facecolors=face_colors,
+                    zsort="average",
+                    edgecolor="#4b5a60",
+                    linewidth=0.15,
+                    alpha=1,
                 )
             )
             for setter, value in zip((ax.set_xlim, ax.set_ylim, ax.set_zlim), center):

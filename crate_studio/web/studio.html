@@ -23,6 +23,7 @@
       </div>
       <div class="header-actions">
         <button id="new-document">＋ New</button
+        ><button id="component-library">Components</button
         ><button id="import-document">Import</button
         ><button id="save-document" class="primary">Save version</button>
         <div class="menu-wrap">
@@ -226,7 +227,7 @@
                 <option value="standard">Quick edit</option>
                 <option value="tools">Design with tools</option>
               </select>
-            </label><span>Ctrl + Enter</span>
+            </label><label><input id="agent-follow" type="checkbox" checked> Live view</label><span>Ctrl + Enter</span>
           </div>
         </section>
       </section>
@@ -320,6 +321,13 @@
         <div class="dialog-actions"><button value="cancel">Cancel</button><button id="print-confirm" type="button" class="primary">Save settings & export</button></div>
       </form>
     </dialog>
+    <dialog id="component-dialog">
+      <div class="dialog-heading"><h2 id="component-title">Insert component</h2><button id="component-close" aria-label="Close component library">×</button></div>
+      <div class="component-layout">
+        <aside><input id="component-search" type="search" placeholder="Search hardware, electronics…" aria-label="Search components"><div id="component-list"></div><button id="component-file">＋ Insert your STEP / mesh</button><input id="component-file-input" type="file" accept=".step,.stp,.stl,.obj" hidden></aside>
+        <section><h3 id="component-name">Choose a component</h3><div id="component-fields"></div><div id="component-placement"></div><p id="component-scope" class="parameter-note"></p><p id="component-source" class="parameter-note"></p><div class="dialog-actions"><button id="component-insert" class="primary" disabled>Insert component</button></div></section>
+      </div>
+    </dialog>
     <dialog id="mesh-import-dialog">
       <form method="dialog">
         <h2>Import 3D mesh</h2>
@@ -370,6 +378,10 @@
           </button>
         </div>
       </form>
+    </dialog>
+    <dialog id="live-design-dialog" class="native-preview-dialog">
+      <header><strong>Design in progress</strong><span>Working drafts · saved design stays unchanged</span><button id="close-live-design" type="button">Close</button></header>
+      <iframe id="live-design-frame" src="/native-preview" title="Live native CAD and drawing preview"></iframe>
     </dialog>
     <script type="module" src="/assets/studio.js"></script>
   </body>

@@ -69,7 +69,7 @@ def restore(session, source_id, selection, log, depth=0):
         if event.get("kind") != "tool":
             continue
         result = session.call(event["tool"], event["arguments"])
-        if event["tool"] == "draft_candidate" and event.get("result", {}).get(
+        if event["tool"] in ("draft_candidate", "insert_component") and event.get("result", {}).get(
             "candidate_id"
         ) != result.get("candidate_id"):
             raise ValueError(

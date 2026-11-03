@@ -193,8 +193,11 @@ def drawing_data(doc, parts):
             "width_mm": width,
             "height_mm": height,
         }
+    from .component_library import instances
+
     return {
         "name": str(doc.get("name", "Untitled drawing"))[:120],
+        "library_components": instances(doc),
         "views": views,
         "annotations": annotations,
         "bbox_mm": {"min": minimum, "max": maximum, "size": dimensions},
@@ -226,8 +229,8 @@ def drawing_data(doc, parts):
 def _annotation_label(a):
     if a["type"] != "dimension":
         return a["text"]
-    value = f'{a["value_mm"]:g} mm' if "value_mm" in a else "Reference annotation"
-    return f"{value} REF" + (f' - {a["text"]}' if a["text"] else "")
+    value = f"{a['value_mm']:g} mm" if "value_mm" in a else "Reference annotation"
+    return f"{value} REF" + (f" - {a['text']}" if a["text"] else "")
 
 
 def _scene(data):
@@ -312,12 +315,12 @@ def _scene(data):
             axis="vertical",
             value_mm=v["height_mm"],
         )
-        text(x, yy + 23, f'Overall width: {v["width_mm"]:.6g} mm', 13)
-        text(x, yy + 43, f'Overall height: {v["height_mm"]:.6g} mm', 13)
+        text(x, yy + 23, f"Overall width: {v['width_mm']:.6g} mm", 13)
+        text(x, yy + 43, f"Overall height: {v['height_mm']:.6g} mm", 13)
         text(
             x,
             yy + 64,
-            f'Scale {data["sheet"]["scale_label"]} | same scale in every view',
+            f"Scale {data['sheet']['scale_label']} | same scale in every view",
             11,
             "#697b83",
         )
@@ -396,7 +399,7 @@ def _svg(data, embed_font=False):
     ]
     for item in _scene(data):
         annotation = (
-            f' data-annotation-id="{html.escape(item["annotation_id"],quote=True)}"'
+            f' data-annotation-id="{html.escape(item["annotation_id"], quote=True)}"'
             if "annotation_id" in item
             else ""
         )
@@ -528,11 +531,38 @@ def _parameter_rows(data):
             meaning = (
                 f"inactive ({inactive_reason}); "
                 if inactive
-                else "suppressed; " if feature["suppressed"] else ""
+                else "suppressed; "
+                if feature["suppressed"]
+                else ""
             ) + unit
-            yield feature, key, json.dumps(
-                value, ensure_ascii=False, allow_nan=False
-            ), meaning
+            yield (
+                feature,
+                key,
+                json.dumps(value, ensure_ascii=False, allow_nan=False),
+                meaning,
+            )
+    for record in data.get("library_components", []):
+        feature = {
+            "id": record["feature_id"],
+            "type": "library component",
+            "name": record["feature_name"],
+            "suppressed": record["suppressed"],
+        }
+        params = record.get("parameters", {})
+        if not isinstance(params, dict):
+            params = {}
+        for key, value in {
+            **params,
+            "source": record.get("source"),
+            "license": record.get("license"),
+        }.items():
+            yield (
+                feature,
+                "library." + key,
+                json.dumps(value, ensure_ascii=False, allow_nan=False),
+                ("suppressed; " if feature["suppressed"] else "")
+                + ("mm; catalogue" if key == "length" else "catalogue / provenance"),
+            )
 
 
 def _parameter_scenes(data):

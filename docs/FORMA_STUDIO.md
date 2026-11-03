@@ -55,3 +55,13 @@ Previous-work attribution remains in `crate_studio/README.md`. TransformControls
 ## Shared workflow and folding
 
 Project, Canvas and Motion share the Studio revision. See [the workflow guide](FORMA_WORKFLOW.md) for enclosure thickness propagation and [articulated folding and 3D import](FORMA_FOLDING.md) for the five native hinge/pin mechanisms, sampled BREP checks and prepared print packs. The separate enclosure-wall study uses virtual hinges and OBB overlap checks; it does not model physical hardware or loads. Brief/display changes reuse cached geometry and drawings; annotation changes invalidate drawings while reusing geometry.
+
+## Components and working drafts
+
+**Components** inserts geometry into the current saved design. The initial curated library includes socket, hex and button head screws, hex nuts, two USB packages and one DIP package. Hardware uses the pinned Apache-2.0 [cq_warehouse](https://github.com/gumyr/cq_warehouse) dependency; electronics use pinned public KiCad STEP references with [KiCad library licensing](https://www.kicad.org/libraries/license/). Source revision, asset hash, parameters and attribution travel with portable projects and export packages. Hardware has simplified threads and is a fit reference, not a printable thread certification.
+
+Select a library feature and choose **Edit library component** to change its supported size/length. Position and rotation remain editable in the normal inspector. **Insert your STEP / mesh** appends an external STEP/STP/STL/OBJ component, with explicit mesh-unit confirmation. Imported geometry supports placement and downstream CAD operations; its original feature tree is not reconstructed. Native geometry is rechecked before saving a new revision; adding a component does not automatically qualify mates, motion, electrical behaviour or physical fit. The bounded document limit is 120 features and 50 bodies. Motion retains its separate limits.
+
+In **Design with tools** mode, **Live view** follows successful native candidate builds in a read-only 3D/drawing window. This displays tool-produced drafts between model decisions, rather than token-level animation. The saved design stays unchanged until a ready proposal is applied. Existing human edits invalidate stale proposals; drafts are never physical approval.
+
+Run the optional source acceptance audit with `python -m research.verify_component_catalog --output output/forma/YOUR_RUN --electronics`. It downloads only the three pinned KiCad assets, validates their Git blob hashes and checks native solids, STEP read-back and placement. It makes no model calls and does not test electrical behaviour, friction, loads or actual manufacturing fit.

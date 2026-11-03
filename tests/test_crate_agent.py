@@ -158,7 +158,7 @@ class CrateAgentBoundaryTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory(
             dir=Path(__file__).resolve().parents[1] / "output"
-        ) as folder, patch.object(agent, "RUNS", Path(folder)), patch.object(
+        ) as folder, patch.object(agent, "RUNS", Path(folder)), patch.object(agent, "estimated_spend", return_value=0), patch.object(
             agent, "configured", return_value=True
         ), patch.object(
             agent, "request", return_value=(transport, response)
@@ -214,7 +214,7 @@ class CrateAgentBoundaryTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory(
             dir=Path(__file__).resolve().parents[1] / "output"
-        ) as folder, patch.object(agent, "RUNS", Path(folder)), patch.object(
+        ) as folder, patch.object(agent, "RUNS", Path(folder)), patch.object(agent, "estimated_spend", return_value=0), patch.object(
             agent, "configured", return_value=True
         ), patch.object(
             agent, "request", side_effect=responses

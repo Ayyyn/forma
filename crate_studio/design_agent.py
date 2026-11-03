@@ -25,6 +25,8 @@ def propose_design(
     geometry_lock=None,
     selection_context=None,
     on_event=None,
+    on_preview=None,
+    component_store=None,
     run_id=None,
     max_turns=10,
     max_tokens=4096,
@@ -49,7 +51,9 @@ def propose_design(
         raise ValueError("Invalid run ID")
     folder = wa.RUNS / run_id
     folder.mkdir(parents=True, exist_ok=False)
-    session = DesignSession(base_doc, prompt, folder, asset_loader, geometry_lock)
+    session = DesignSession(
+        base_doc, prompt, folder, asset_loader, geometry_lock, component_store
+    )
 
     def log(event):
         with (folder / "events.jsonl").open("a", encoding="utf-8") as f:
@@ -133,7 +137,8 @@ def propose_design(
                     }
                 )
             elif len(session.events) >= 6 and not any(
-                e["tool"] == "draft_candidate" for e in session.events
+                e["tool"] in ("draft_candidate", "insert_component")
+                for e in session.events
             ):
                 staged_messages.append(
                     {
@@ -299,6 +304,29 @@ def propose_design(
                         on_event("tool", "Muse · " + str(name).replace("_", " "))
                     before = len(session.events)
                     result = session.call(name, arguments)
+                    if (
+                        on_preview
+                        and name in ("draft_candidate", "insert_component")
+                        and result.get("ok")
+                        and result.get("candidate_id")
+                    ):
+                        candidate_id = result["candidate_id"]
+                        if session._build(candidate_id)["checks"]["passed"]:
+                            try:
+                                on_preview(
+                                    deepcopy(
+                                        session.candidates[candidate_id]["document"]
+                                    ),
+                                    candidate_id,
+                                )
+                            except Exception as preview_error:
+                                log(
+                                    {
+                                        "kind": "preview_error",
+                                        "message": str(preview_error)[:500],
+                                        "budget_charge_usd": 0,
+                                    }
+                                )
                     if len(session.events) > before:
                         log(
                             {

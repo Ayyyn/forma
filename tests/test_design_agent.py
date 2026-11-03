@@ -54,26 +54,47 @@ def finish(ident):
 
 
 class DesignToolTests(unittest.TestCase):
-    def test_recorded_mechanism_reference_resolves_before_cache_and_never_crosses_candidates(self):
+    def test_recorded_mechanism_reference_resolves_before_cache_and_never_crosses_candidates(
+        self,
+    ):
         with tempfile.TemporaryDirectory(dir="output") as directory:
             session = DesignSession(document(), "Diagnostic control", directory)
-            arguments = {"candidate_id": "base", "moving_part_ids": ["body_002"],
-                         "direction": [1, 0, 0], "max_distance_mm": 1, "samples": 3,
-                         "mechanism_spec": {}, "state_name": "end"}
+            arguments = {
+                "candidate_id": "base",
+                "moving_part_ids": ["body_002"],
+                "direction": [1, 0, 0],
+                "max_distance_mm": 1,
+                "samples": 3,
+                "mechanism_spec": {},
+                "state_name": "end",
+            }
             missing = session.call("probe_translation", arguments)
             self.assertFalse(missing["ok"])
-            self.assertTrue(session.call("check_motion", {"candidate_id": "base", "spec": specification(10)})["ok"])
+            self.assertTrue(
+                session.call(
+                    "check_motion", {"candidate_id": "base", "spec": specification(10)}
+                )["ok"]
+            )
             first = session.call("probe_translation", arguments)
             self.assertTrue(first["path_clear_at_samples"])
             self.assertEqual(session.events[-1]["arguments"]["mechanism_spec"], {})
-            self.assertEqual(session.events[-1]["resolved_arguments"]["mechanism_spec"], specification(10))
+            self.assertEqual(
+                session.events[-1]["resolved_arguments"]["mechanism_spec"],
+                specification(10),
+            )
             self.assertEqual(session.call("probe_translation", arguments), first)
             self.assertTrue(session.events[-1]["cache_hit"])
             session.candidates["new-candidate"] = deepcopy(session.candidates["base"])
-            self.assertFalse(session.call("probe_translation", {**arguments, "candidate_id": "new-candidate"})["ok"])
+            self.assertFalse(
+                session.call(
+                    "probe_translation", {**arguments, "candidate_id": "new-candidate"}
+                )["ok"]
+            )
             # The same named state changes position: using an unresolved cache
             # key would incorrectly return the prior clear path.
-            session.call("check_motion", {"candidate_id": "base", "spec": specification(20)})
+            session.call(
+                "check_motion", {"candidate_id": "base", "spec": specification(20)}
+            )
             changed = session.call("probe_translation", arguments)
             self.assertFalse(session.events[-1]["cache_hit"])
             self.assertFalse(changed["initial_pose_clear"])
@@ -158,9 +179,12 @@ class DesignToolTests(unittest.TestCase):
 
         doc = document()
         doc["features"][1]["params"]["cx"] = 0
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            folding, "collisions", wraps=folding.collisions
-        ) as intersections:
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(
+                folding, "collisions", wraps=folding.collisions
+            ) as intersections,
+        ):
             session = DesignSession(doc, "Inspect", directory)
             draft = session.call(
                 "draft_candidate",
@@ -381,6 +405,7 @@ class DesignToolTests(unittest.TestCase):
 class DesignAgentTests(unittest.TestCase):
     def test_inspection_only_run_gets_construction_hint_without_losing_tools(self):
         phase = 0
+        previews = []
 
         def provider(base, key, route, payload, timeout):
             nonlocal phase
@@ -455,26 +480,31 @@ class DesignAgentTests(unittest.TestCase):
                 "usage": {"prompt_tokens": 100, "completion_tokens": 100},
             }, {"id": f"progress-model-{phase}", "choices": [{"message": message}]}
 
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-secret"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", side_effect=provider
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", side_effect=provider),
         ):
             result = da.propose_design(
                 {"name": "New", "features": []},
                 BRIEF,
                 run_id="progress-control",
                 max_turns=3,
+                on_preview=lambda document, ident: previews.append((document, ident)),
             )
             self.assertEqual(result["status"], "incomplete")
             candidates = json.loads(
                 (Path(directory) / "progress-control/candidates.json").read_text()
             )
             self.assertEqual(len(candidates), 2)
+            self.assertEqual(len(previews), 1)
+            self.assertEqual(
+                previews[0][0]["features"],
+                candidates[previews[0][1]]["document"]["features"],
+            )
             self.assertFalse(any(c.get("design_review") for c in candidates.values()))
 
     def test_checkpoint_revalidates_tools_and_finishes_with_one_new_model_response(
@@ -562,14 +592,13 @@ class DesignAgentTests(unittest.TestCase):
             }
 
         doc = {"name": "New", "features": []}
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-secret"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", side_effect=provider
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", side_effect=provider),
         ):
             first = da.propose_design(
                 doc, BRIEF, run_id="checkpoint-first", max_turns=3
@@ -624,6 +653,7 @@ class DesignAgentTests(unittest.TestCase):
 
         def proposal(doc, prompt, **kwargs):
             value = wa.apply_plan(doc, plate_plan(), prompt)
+            kwargs["on_preview"](value["document"], "native-preview-fixture")
             value.update(
                 model=wa.MODEL,
                 run_id=kwargs["run_id"],
@@ -633,24 +663,24 @@ class DesignAgentTests(unittest.TestCase):
             )
             return value
 
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            ws, "DATA", Path(directory)
-        ), patch.object(ws, "DOCS", Path(directory) / "documents"), patch.object(
-            ws, "JOBS", {}
-        ), patch.object(
-            wa.agent, "configured", return_value=True
-        ), patch.object(
-            da, "propose_design", side_effect=proposal
-        ) as design, patch.object(
-            wa,
-            "propose_document",
-            return_value={
-                "status": "clarify",
-                "summary": "Fixture clarification",
-                "questions": ["Which dimension?"],
-                "document": {"name": "New", "features": []},
-            },
-        ) as quick:
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(ws, "DATA", Path(directory)),
+            patch.object(ws, "DOCS", Path(directory) / "documents"),
+            patch.object(ws, "JOBS", {}),
+            patch.object(wa.agent, "configured", return_value=True),
+            patch.object(da, "propose_design", side_effect=proposal) as design,
+            patch.object(
+                wa,
+                "propose_document",
+                return_value={
+                    "status": "clarify",
+                    "summary": "Fixture clarification",
+                    "questions": ["Which dimension?"],
+                    "document": {"name": "New", "features": []},
+                },
+            ) as quick,
+        ):
             routes = {
                 r.path: r.endpoint for r in ws.create_router(threading.RLock()).routes
             }
@@ -671,6 +701,20 @@ class DesignAgentTests(unittest.TestCase):
                 ws.PromptBody(**args, agent_mode="tools")
             )
             self.assertEqual(first["id"], duplicate["id"])
+            self.assertNotIn("_preview_snapshot", duplicate)
+            self.assertNotIn("_preview_snapshot", get(first["id"]))
+            preview = routes["/api/studio/jobs/{id}/preview"](first["id"], sequence=1)
+            self.assertEqual(preview["snapshot"]["metrics"]["size_mm"], [30, 20, 2])
+            self.assertEqual(preview["preview"]["base_document_id"], original["id"])
+            self.assertEqual(
+                ws.read_document(original["id"], threading.RLock())["document"][
+                    "features"
+                ],
+                [],
+            )
+            with self.assertRaises(Exception) as stale:
+                routes["/api/studio/jobs/{id}/preview"](first["id"], sequence=2)
+            self.assertEqual(stale.exception.status_code, 409)
             apply = routes["/api/studio/proposals/{id}/apply"]
             a, b = apply(first["id"]), apply(first["id"])
             self.assertEqual(a["id"], b["id"])
@@ -786,14 +830,13 @@ class DesignAgentTests(unittest.TestCase):
                 ],
             }
 
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-secret"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", side_effect=provider
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", side_effect=provider),
         ):
             result = da.propose_design(
                 {"name": "New", "features": []},
@@ -813,15 +856,14 @@ class DesignAgentTests(unittest.TestCase):
             self.assertEqual(ledger.count('"kind": "reservation"'), 5)
 
     def test_budget_guard_stops_before_transport(self):
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-secret"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=wa.agent.CAP_USD
-        ), patch.object(
-            wa, "request"
-        ) as transport:
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa.agent, "estimated_spend", return_value=wa.agent.CAP_USD),
+            patch.object(wa, "request") as transport,
+        ):
             result = da.propose_design(
                 {"name": "New", "features": []}, BRIEF, run_id="budget"
             )
@@ -856,14 +898,13 @@ class DesignAgentTests(unittest.TestCase):
                 "choices": [{"message": message, "finish_reason": "length"}],
             }
 
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-secret"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", side_effect=provider
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", side_effect=provider),
         ):
             result = da.propose_design(
                 {"name": "New", "features": []},
@@ -910,15 +951,14 @@ class DesignAgentTests(unittest.TestCase):
                 },
             ),
         ]
-        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
-            wa, "RUNS", Path(directory)
-        ), patch.object(wa, "load_env"), patch.dict(
-            os.environ, {"MODEL_API_KEY": "offline-secret"}
-        ), patch.object(
-            wa.agent, "estimated_spend", return_value=0
-        ), patch.object(
-            wa, "request", side_effect=replies
-        ) as transport:
+        with (
+            tempfile.TemporaryDirectory(dir="output") as directory,
+            patch.object(wa, "RUNS", Path(directory)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", side_effect=replies) as transport,
+        ):
             result = da.propose_design(
                 {"name": "New", "features": []},
                 BRIEF,

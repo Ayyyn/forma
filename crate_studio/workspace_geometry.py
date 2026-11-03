@@ -17,7 +17,7 @@ import numpy as np
 from OCP.Bnd import Bnd_Box
 from OCP.BRepBndLib import BRepBndLib
 
-MAX_FEATURES = 60
+MAX_FEATURES = 120
 MAX_BODIES = 50
 
 
@@ -186,7 +186,7 @@ def _apply(kind, p, shapes, asset_loader):
         )
         operation = p.get("operation", "add")
         if "target_part_id" in p:
-            ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+            ids = [f"body_{i + 1:03d}" for i in range(len(shapes))]
             if p["target_part_id"] not in ids or operation not in ("add", "cut"):
                 raise ValueError(
                     "Targeted primitive requires an existing body and operation add/cut"
@@ -215,7 +215,15 @@ def _apply(kind, p, shapes, asset_loader):
         if not isinstance(path, (str, Path)):
             raise ValueError("Asset loader must return a local STEP path")
         imported = cq.importers.importStep(str(path))
-        return shapes + list(imported.solids().vals())
+        rotation = _vector(p, "rotation")
+        translation = _vector(p, "translation")
+        parts = list(imported.solids().vals())
+        for index, angle in enumerate(rotation):
+            if angle:
+                axis = [0, 0, 0]
+                axis[index] = 1
+                parts = [part.rotate((0, 0, 0), tuple(axis), angle) for part in parts]
+        return shapes + [part.translate(translation) for part in parts]
     if not shapes:
         raise ValueError("Operation needs an existing body")
     if kind == "cut_hole":
@@ -223,7 +231,7 @@ def _apply(kind, p, shapes, asset_loader):
         if end_condition not in ("blind", "through_all"):
             raise ValueError("Hole end_condition must be blind or through_all")
         target = p.get("target_part_id")
-        ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+        ids = [f"body_{i + 1:03d}" for i in range(len(shapes))]
         if target is not None and target not in ids:
             raise ValueError("target_part_id must identify an existing body")
         body = shapes[ids.index(target)] if target is not None else _union(shapes)
@@ -247,7 +255,7 @@ def _apply(kind, p, shapes, asset_loader):
             else changed
         )
     if kind == "face_offset":
-        ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+        ids = [f"body_{i + 1:03d}" for i in range(len(shapes))]
         part_id = p.get("part_id")
         if part_id not in ids:
             raise ValueError("part_id must identify a current body")
@@ -289,7 +297,7 @@ def _apply(kind, p, shapes, asset_loader):
         explicit = "edge_indices" in p
         selected_body = None
         if explicit:
-            ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+            ids = [f"body_{i + 1:03d}" for i in range(len(shapes))]
             if p.get("part_id") not in ids:
                 raise ValueError("Explicit edges require a current part_id")
             selected_body = ids.index(p["part_id"])
@@ -337,7 +345,7 @@ def _apply(kind, p, shapes, asset_loader):
         shift = _vector(p, "translation")
         angles = _vector(p, "rotation")
         target = p.get("target_part_id")
-        ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+        ids = [f"body_{i + 1:03d}" for i in range(len(shapes))]
         if target is not None and target not in ids:
             raise ValueError("target_part_id does not identify a current body")
         result = []
@@ -351,7 +359,7 @@ def _apply(kind, p, shapes, asset_loader):
             result.append(shape.translate(shift))
         return result
     if kind == "mate":
-        ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+        ids = [f"body_{i + 1:03d}" for i in range(len(shapes))]
         source = p.get("source_part_id")
         target = p.get("target_part_id")
         if source not in ids or target not in ids or source == target:
@@ -428,7 +436,7 @@ def _apply(kind, p, shapes, asset_loader):
         return result
     if kind in ("union", "boolean_union"):
         if "part_ids" in p:
-            ids = [f"body_{i+1:03d}" for i in range(len(shapes))]
+            ids = [f"body_{i + 1:03d}" for i in range(len(shapes))]
             selected = p["part_ids"]
             if (
                 not isinstance(selected, list)
@@ -604,8 +612,8 @@ def build_document(doc, asset_loader=None):
         statuses.append(entry)
     try:
         for index, shape in enumerate(shapes):
-            pid = f"body_{index+1:03d}"
-            name = f"Body {index+1}"
+            pid = f"body_{index + 1:03d}"
+            name = f"Body {index + 1}"
             info = inspect_shape(shape, pid)
             result["parts"].append({"id": pid, "name": name, "shape": shape})
             result["mesh"].append({"id": pid, "name": name, **_mesh(shape)})

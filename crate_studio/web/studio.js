@@ -1,6 +1,12 @@
 import { createWorkflow } from "/assets/workflow.js";
 import { profileContains } from "/assets/sketch_hit.mjs";
+import { componentLibrary } from "/assets/component_library.js";
 let workflow;
+let liveSequence = 0, liveLatest = null;
+function showLiveDesign() {
+  if (liveLatest) $("#live-design-frame").contentWindow?.postMessage({type:"forma-preview", ...liveLatest}, location.origin);
+  if (!$("#live-design-dialog").open) $("#live-design-dialog").showModal();
+}
 const $ = (s) => document.querySelector(s),
   $$ = (s) => [...document.querySelectorAll(s)],
   clone = (x) => JSON.parse(JSON.stringify(x));
@@ -20,6 +26,13 @@ const fmt = (n, d = 2) =>
     : "—";
 
 const uid = () => `f-${crypto.randomUUID().slice(0, 10)}`;
+$("#close-live-design").onclick = () => $("#live-design-dialog").close();
+$("#live-design-dialog").addEventListener("close", () => { $("#agent-follow").checked = false; });
+$("#agent-follow").onchange = () => { if ($("#agent-follow").checked && liveLatest) showLiveDesign(); };
+window.addEventListener("message", event => {
+  if (event.origin === location.origin && event.source === $("#live-design-frame").contentWindow && event.data?.type === "forma-preview-ready" && liveLatest)
+    event.source.postMessage({type:"forma-preview", ...liveLatest}, location.origin);
+});
 
 const state = {
   snapshot: null,
@@ -232,8 +245,8 @@ const definitions = {
   import_step: {
     label: "Imported solid",
     icon: "⬡",
-    params: {},
-    fields: [["asset_id", "Source asset", "readonly"]],
+    params: { translation: [0,0,0], rotation: [0,0,0] },
+    fields: [["asset_id", "Source asset", "readonly"], ["translation", "Position · mm", "vector"], ["rotation", "Rotation · deg", "vector"]],
   },
 
   union: { label: "Union", icon: "⊞", params: {}, fields: [] },
@@ -513,6 +526,12 @@ function renderInspector() {
   $("#discard-edits")?.addEventListener("click", () =>
     useSnapshot(state.snapshot),
   );
+  const instance = state.document.metadata?.component_instances?.[f.id];
+  if (instance?.catalog_id && instance.asset_id === f.params.asset_id) {
+    const button=document.createElement("button");button.type="button";button.className="discard-button";button.textContent="Edit library component…";
+    button.addEventListener("click",()=>openComponentLibrary(f.id).catch(e=>toast(e.message,true)));
+    $("#feature-form").append(button);
+  }
   $('[data-param="shape"]')?.addEventListener("change", (e) => {
     readFeatureForm(f);
     f.params.shape = e.target.value;
@@ -1866,6 +1885,9 @@ async function sendAgent(regenerate = false, resumeFrom = null) {
     );
     return;
   }
+  liveSequence = 0; liveLatest = null;
+  $("#live-design-dialog").querySelector("strong").textContent="Design in progress";
+  $("#live-design-frame").contentWindow?.postMessage({type:"forma-preview-reset"}, location.origin);
   state.agentBusy = true;
   state.agentBase = clone(state.snapshot);
   state.agentProposal = null;
@@ -1928,13 +1950,25 @@ async function pollAgent(id) {
       Math.min(15000, end - Date.now()),
     );
     $("#agent-status").textContent = job.stage || job.status;
+    if (job.preview && job.preview.sequence > liveSequence && agentStillCurrent()) {
+      try {
+        const draft = await api(`/jobs/${encodeURIComponent(id)}/preview?sequence=${job.preview.sequence}`);
+        if (agentStillCurrent() && draft.preview.base_document_id === state.agentBase.id) {
+          liveLatest = {snapshot:draft.snapshot,label:`Draft ${draft.preview.sequence} · ${draft.preview.feature_count} features · not applied`};
+          liveSequence = draft.preview.sequence;
+          if ($("#agent-follow").checked) showLiveDesign();
+        }
+      } catch (error) { console.warn("Live preview unavailable:", error.message); }
+    }
     if (job.status === "failed") {
+      $("#live-design-dialog").querySelector("strong").textContent="Run stopped · drafts not applied";
       const e = new Error(job.error || "Meta request failed");
       e.failed = true;
       throw e;
     }
     if (job.status === "completed") {
       renderAgent(job);
+      if ($("#live-design-dialog").open) $("#live-design-dialog").querySelector("strong").textContent = job.proposal?.status === "ready" ? "Proposal ready for review" : "Drafts retained · work incomplete";
       return;
     }
     $("#agent-result").innerHTML =
@@ -1943,7 +1977,8 @@ async function pollAgent(id) {
       )
         .slice(-2)
         .map((e) => `<p>${esc(e.message)}</p>`)
-        .join("")}`;
+        .join("")}${liveLatest ? '<button id="watch-live-design">Watch live</button>' : ""}`;
+    $("#watch-live-design")?.addEventListener("click", showLiveDesign);
     await new Promise((r) =>
       setTimeout(r, Math.min(1100, Math.max(0, end - Date.now()))),
     );
@@ -2152,7 +2187,7 @@ async function exportDocument(format) {
   }
 }
 
-async function importFile(file, meshUnits) {
+async function importFile(file, meshUnits, asComponent=false) {
   if (!file || state.busy) return;
   if (file.size > 15_000_000) {
     toast("Import supports files up to 15 MB.", true);
@@ -2165,13 +2200,15 @@ async function importFile(file, meshUnits) {
     let str = "";
     for (let i = 0; i < bytes.length; i += 32768)
       str += String.fromCharCode(...bytes.subarray(i, i + 32768));
-    const result = await api("/import", {
+    const result = await api(asComponent ? "/components/import" : "/import", {
       filename: file.name,
       content_base64: btoa(str),
       mesh_units: meshUnits,
       parent_id: state.snapshot?.id,
+      ...(asComponent ? {document:state.document,translation:[0,0,0],rotation:[0,0,0]} : {}),
     });
     useSnapshot(result);
+    if (result.selected_feature_id) {state.feature=result.selected_feature_id;renderTree();renderInspector();}
     await refreshHistory();
     toast("Imported " + file.name);
   } catch (e) {
@@ -2337,11 +2374,11 @@ $("#new-document-explorer").addEventListener("click", () => {
 $("#import-document").addEventListener("click", () =>
   $("#import-file").click(),
 );
-let pendingMeshFile = null;
+let pendingMeshFile = null, pendingMeshComponent = false;
 $("#import-file").addEventListener("change", (e) => {
   const file=e.target.files[0];
   if (file && /\.(stl|obj)$/i.test(file.name)) {
-    pendingMeshFile=file;
+    pendingMeshFile=file;pendingMeshComponent=false;
     $("#mesh-import-filename").textContent=file.name+" · confirm its original units";
     $("#mesh-import-dialog").showModal();
   } else importFile(file);
@@ -2362,7 +2399,7 @@ $("#mesh-import-confirm").addEventListener("click",()=>{
   const file=pendingMeshFile;pendingMeshFile=null;
   const units=$("#mesh-import-units").value;
   $("#mesh-import-dialog").close();
-  importFile(file,units);
+  importFile(file,units,pendingMeshComponent);pendingMeshComponent=false;
 });
 $("#sketch-plus").addEventListener("click", () => {
   sketch.scale = Math.min(40, sketch.scale * 1.25);
@@ -2503,4 +2540,8 @@ workflow = createWorkflow({
     }
   },
 });
+const openComponentLibrary=componentLibrary({$,esc,state,api,toast,useSnapshot,refreshHistory,renderTree,renderInspector,setBusy,importFile,
+  onMesh:file=>{pendingMeshFile=file;pendingMeshComponent=true;$("#mesh-import-filename").textContent=file.name+" · confirm its original units";$("#mesh-import-dialog").showModal();}
+});
+$("#component-library").onclick=()=>openComponentLibrary().catch(e=>toast(e.message,true));
 start();

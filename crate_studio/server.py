@@ -490,6 +490,11 @@ def studio_home():
     return FileResponse(WEB / "studio.html")
 
 
+@app.get("/native-preview")
+def native_preview_page():
+    return FileResponse(WEB / "native_preview.html")
+
+
 @app.get("/evaluation")
 def evaluation_home():
     path = DATA / "evaluation" / "review.html"

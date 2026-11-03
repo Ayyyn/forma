@@ -23,7 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "output" / "forma" / "agent"
 MODEL = "muse-wonder-1.0"
 CAP_USD = 125.0
-_spend_lock = threading.Lock()
+from .budget import BudgetLock
+
+_spend_lock = BudgetLock(lambda: ROOT / "output/forma/budget.lock")
 SYSTEM = """You are Forma's engineering intent planner for one supported family: rectangular, uniform-thickness, butt-joint panel crates/enclosures. Interpret the user's requested revision against the current design and retained requirements. You control a deterministic geometry and stock-sizing environment; do not generate code.
 Earlier instructions, when supplied, are the user's preceding requests in this same uncommitted proposal conversation. Use them to resolve follow-ups and clarification answers; the latest request takes precedence. Their requested requirements remain relevant unless withdrawn or superseded. The saved project remains the approved baseline. A failed proposal was not applied. Evidence may quote either the current instruction or those actual earlier instructions. Never treat a prior model summary as user authorization.
 Return ONLY JSON with exactly these fields:
@@ -157,17 +159,13 @@ def apply_plan(project, plan, prompt):
 
 
 def estimated_spend():
-    total = 0.0
-    for ledger_root in [RUNS, ROOT / "output/forma/studio/agent"]:
-        if not ledger_root.exists():
-            continue
-        for path in ledger_root.glob("*/events.jsonl"):
-            for line in path.read_text(encoding="utf-8").splitlines():
-                try:
-                    total += json.loads(line).get("budget_charge_usd", 0)
-                except (ValueError, TypeError):
-                    pass
-    return total
+    from .budget import usage
+
+    retained = ROOT / "docs/FORMA_BUDGET_SNAPSHOT.json"
+    result = usage([RUNS, ROOT / "output/forma/studio/agent"], require_roots=retained.is_file())
+    if retained.is_file() and result["response_count"] < json.loads(retained.read_text(encoding="utf-8"))["response_count"]:
+        raise ValueError("Forma receipt history is incomplete; previous usage has been retained")
+    return float(result["guard"])
 
 
 def configured():
@@ -238,21 +236,32 @@ def propose(
         with _spend_lock:
             if estimated_spend() + reservation > CAP_USD:
                 raise ValueError(
-                    f"Forma estimated API budget reached (${CAP_USD:g}). Review receipts before increasing the app cap."
+                    f"Forma application usage limit reached (${CAP_USD:g}); this is a local limit, not your provider credit balance."
                 )
+            budget_request_id = uuid.uuid4().hex
+            with (folder / "events.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"kind": "reservation", "budget_request_id": budget_request_id,
+                    "attempt": attempt + 1, "budget_charge_usd": reservation,
+                    "request_sha256": hashlib.sha256(encoded).hexdigest()}) + "\n")
             start = time.monotonic()
             transport, body = request(
                 "https://api.meta.ai/v1", key, "/chat/completions", payload, timeout=120
             )
             usage = transport.get("usage") or {}
+            valid_usage = all(type(usage.get(k)) is int and usage[k] >= 0
+                              for k in ("prompt_tokens", "completion_tokens"))
             cost = (
                 usage.get("prompt_tokens", 0) * 4e-6
                 + usage.get("completion_tokens", 0) * 20e-6
-            )
+            ) if valid_usage else reservation
             public = ((body or {}).get("choices") or [{}])[0].get("message", {}).get(
                 "content"
             ) or ""
             event = {
+                "kind": "response",
+                "budget_request_id": budget_request_id,
+                "usage_complete": valid_usage,
+                "reservation_usd": reservation,
                 "attempt": attempt + 1,
                 "utc": datetime.now(timezone.utc).isoformat(),
                 "model": MODEL,
@@ -263,8 +272,8 @@ def propose(
                 "returned_model": (body or {}).get("model"),
                 "public_response": public,
                 "elapsed_s": time.monotonic() - start,
-                "estimated_cost_usd": cost if usage else None,
-                "budget_charge_usd": cost if usage else reservation,
+                "estimated_cost_usd": cost if valid_usage else None,
+                "budget_charge_usd": max(0, cost - reservation),
                 "billing_verified": False,
             }
             with (folder / "events.jsonl").open("a", encoding="utf-8") as f:
@@ -357,7 +366,7 @@ def propose(
                     for x in receipts
                 ),
             },
-            "estimated_cost_usd": sum(x["budget_charge_usd"] for x in receipts),
+            "estimated_cost_usd": sum(x["estimated_cost_usd"] if x["estimated_cost_usd"] is not None else x["reservation_usd"] for x in receipts),
             "response_ids": [x["response_id"] for x in receipts],
             "calls": len(receipts),
             "billing_verified": False,

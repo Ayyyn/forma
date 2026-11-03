@@ -416,7 +416,7 @@ class WorkspaceGeometryTests(unittest.TestCase):
             {
                 "features": [
                     feature(str(i), "box", width=1, depth=1, height=1)
-                    for i in range(61)
+                    for i in range(121)
                 ]
             }
         )

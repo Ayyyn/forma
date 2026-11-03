@@ -1,7 +1,7 @@
 """Refresh internal Forma budget notes from local receipts; no API or credentials.
 
-The application guard retains reservations. It is deliberately different from
-receipt cost estimates and from the provider's actual invoice/credit balance.
+Completed metered requests settle their reservations; uncertain/open requests
+retain them. Historical debits and provider balances remain distinct quantities.
 """
 
 import ast
@@ -11,6 +11,7 @@ from decimal import Decimal
 import hashlib
 import json
 from pathlib import Path
+from crate_studio.budget import ledger_summary
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG = ROOT / "docs/FORMA_ENGINEERING_LOG.md"
@@ -87,6 +88,15 @@ def snapshot():
                 )
             )
             group = groups[key]
+            reconciled = ledger_summary(path)
+            group["guard"] += reconciled["guard"]
+            for field in (
+                "historical_debits",
+                "open_reservations",
+                "open_request_count",
+                "uncertain_response_count",
+            ):
+                group[field] = group.get(field, 0) + reconciled[field]
             for index, line in enumerate(data.decode("utf-8").splitlines(), 1):
                 event = json.loads(line)
                 if not isinstance(event, dict):
@@ -94,7 +104,6 @@ def snapshot():
                 kind = event.get("kind", "legacy_response")
                 counts[kind] += 1
                 charge = dollars(event.get("budget_charge_usd", 0), "budget charge")
-                group["guard"] += charge
                 if kind == "reservation":
                     group["reservations"] += charge
                 if kind == "response" or (
@@ -109,6 +118,14 @@ def snapshot():
                     else:
                         group["missing_estimates"] += 1
     total_guard = sum(g["guard"] for g in groups.values())
+    if (
+        SNAPSHOT.is_file()
+        and sum(g["responses"] for g in groups.values())
+        < json.loads(SNAPSHOT.read_text(encoding="utf-8"))["response_count"]
+    ):
+        raise ValueError(
+            "Receipt history is incomplete; previous budget snapshot retained"
+        )
     ist = timezone(timedelta(hours=5, minutes=30))
     return {
         "as_of_ist": datetime.now(timezone.utc)
@@ -117,6 +134,12 @@ def snapshot():
         "scope": "Local Forma application ledgers only; earlier non-Forma prototypes and provider account balances are outside this snapshot.",
         "approved_application_cap_usd": amount(cap),
         "conservative_guard_usd": amount(total_guard),
+        "historical_unsettled_debits_usd": amount(
+            sum(g["historical_debits"] for g in groups.values())
+        ),
+        "open_reservations_usd": amount(
+            sum(g["open_reservations"] for g in groups.values())
+        ),
         "guard_headroom_usd": amount(cap - total_guard) if cap >= total_guard else None,
         "cap_exceeded": total_guard > cap,
         "recorded_response_estimates_usd": amount(
@@ -140,7 +163,7 @@ def snapshot():
         "ledger_manifest_sha256": hashlib.sha256(
             json.dumps(ledgers, separators=(",", ":")).encode()
         ).hexdigest(),
-        "accounting": "Guard sums persisted budget_charge_usd, including reservations which are not released. Recorded estimates sum response estimated_cost_usd only; historical pricing/estimation policies differ. Neither is a provider invoice. Full17 groups include every restored second attempt.",
+        "accounting": "Guard settles uniquely matched completed metered requests to their recorded estimates. Open, unmetered and ambiguous reservations remain conservative. Historical debits remain preserved in raw ledgers and separately reported; neither quantity is provider billing or credits. No cap increase or receipt deletion.",
     }
 
 
@@ -159,8 +182,10 @@ def main():
         "| Budget measure | USD | Meaning |",
         "|---|---:|---|",
         f"| Approved application cap | ${data['approved_application_cap_usd']:.2f} | Read from the app; approval history is recorded above |",
-        f"| Conservative guard charge | ${data['conservative_guard_usd']:.6f} | Persisted reservations plus charge entries; includes earlier Forma experiments |",
-        f"| Guard headroom | {'Exceeded' if data['guard_headroom_usd'] is None else '$'+format(data['guard_headroom_usd'], '.6f')} | Application permission to reserve more; not remaining provider credits |",
+        f"| Active application guard | ${data['conservative_guard_usd']:.6f} | Recorded usage estimates plus open/uncertain reservations; completed metered requests settled |",
+        f"| Historical unsettled debits | ${data['historical_unsettled_debits_usd']:.6f} | Old cumulative reservation accounting, retained for audit; not current usage |",
+        f"| Open request reservations | ${data['open_reservations_usd']:.6f} | Unknown/in-flight requests remain reserved |",
+        f"| Guard headroom | {'Exceeded' if data['guard_headroom_usd'] is None else '$' + format(data['guard_headroom_usd'], '.6f')} | Application permission to reserve more; not remaining provider credits |",
         f"| Sum of recorded response estimates | ${data['recorded_response_estimates_usd']:.7f} | {data['response_count']} responses; {data['responses_missing_explicit_estimate']} lack an explicit estimate; historical estimation policies differ |",
         "| Provider invoice and remaining credits | Unknown | Not verified against Meta, Baseten or Modal billing |",
         "",

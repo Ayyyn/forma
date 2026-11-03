@@ -34,6 +34,7 @@ from .workspace_geometry import (
     build_document,
     export_document,
     _bounds as exact_bounds_mm,
+    MAX_FEATURES,
 )
 from .workspace_drawing import (
     drawing_svg,
@@ -134,7 +135,7 @@ CAPABILITIES = {
         "bundle",
         "print",
     ],
-    "limits": {"features": 60, "bodies": 50, "upload_bytes": 15_000_000},
+    "limits": {"features": MAX_FEATURES, "bodies": 50, "upload_bytes": 15_000_000},
     "scope": "Declarative BREP features, dimension-driven profiles and sequential planar alignment. No native SolidWorks/AutoCAD feature history, general sketch constraint solver, simultaneous mate solver or manufacturing qualification.",
 }
 
@@ -208,8 +209,8 @@ def normalize_document(value):
     if not isinstance(name, str) or not name.strip() or len(name) > 100:
         raise ValueError("Document name must contain 1–100 characters")
     doc["name"] = name.strip()
-    if not isinstance(doc.get("features"), list) or len(doc["features"]) > 60:
-        raise ValueError("A document supports up to 60 features")
+    if not isinstance(doc.get("features"), list) or len(doc["features"]) > MAX_FEATURES:
+        raise ValueError(f"A document supports up to {MAX_FEATURES} features")
     doc.setdefault("annotations", [])
     validate_annotations(doc)
     doc.setdefault("display", {})
@@ -280,6 +281,11 @@ def drawing_key(doc):
             "features": doc["features"],
             "name": doc["name"],
             "annotations": doc["annotations"],
+            "metadata": {
+                "component_instances": doc.get("metadata", {}).get(
+                    "component_instances", {}
+                )
+            },
             "assets": asset_identity(doc, asset_path),
         },
         sort_keys=True,
@@ -607,6 +613,29 @@ class MeasureBody(DocumentBody):
     selection: list[str] = Field(min_length=1, max_length=2)
 
 
+class ComponentBody(DocumentBody):
+    parent_id: str
+    catalog_id: str
+    parameters: dict = Field(default_factory=dict)
+    translation: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+    rotation: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+    feature_id: str | None = None
+
+
+class ComponentImportBody(ImportBody):
+    document: dict
+    translation: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+    rotation: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+
+
 class PromptBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     document_id: str
@@ -715,7 +744,7 @@ def create_router(cad_lock, crate_reader=None):
             raise HTTPException(404, "Enclosure conversion is unavailable")
         source = crate_reader(id)
         features = enclosure_features(source["panels"])
-        names = {f"body_{i+1:03d}": p["name"] for i, p in enumerate(source["panels"])}
+        names = {f"body_{i + 1:03d}": p["name"] for i, p in enumerate(source["panels"])}
         doc = {
             "name": source["spec"]["name"],
             "features": features,
@@ -731,8 +760,7 @@ def create_router(cad_lock, crate_reader=None):
             doc, cad_lock, label="Enclosure imported as editable panels"
         )
 
-    @router.post("/import")
-    def import_document(body: ImportBody):
+    def parse_import(body: ImportBody):
         try:
             data = base64.b64decode(body.content_base64, validate=True)
         except Exception:
@@ -898,9 +926,98 @@ def create_router(cad_lock, crate_reader=None):
             raise ValueError(
                 "Supported imports: STEP, STP, single-profile DXF, or Forma Studio JSON. Native SLDPRT/DWG is not supported."
             )
+        return doc
+
+    @router.post("/import")
+    def import_document(body: ImportBody):
+        doc = parse_import(body)
+        suffix = Path(body.filename).suffix.lower()
         return save_document(
             doc, cad_lock, body.parent_id, "Imported " + suffix.upper().lstrip(".")
         )
+
+    @router.get("/components")
+    def component_catalog():
+        from .component_library import catalog
+
+        return {
+            "components": catalog(),
+            "scope": "Native reference geometry. Check alignment, interference and supplier specifications after insertion.",
+        }
+
+    @router.post("/components/insert")
+    def insert_component(body: ComponentBody):
+        from .component_library import materialize, insert
+
+        # Verify parent exists and do not silently append to an obsolete revision.
+        parent = read_document(body.parent_id, cad_lock)
+        doc = normalize_document(body.document)
+        if parent["document"] != doc:
+            raise HTTPException(
+                409, "Save or discard local edits before inserting a component"
+            )
+        with cad_lock:
+            record = materialize(
+                body.catalog_id, body.parameters, DATA / "component-cache", store_asset
+            )
+            doc, ident = insert(
+                doc, record, body.translation, body.rotation, body.feature_id
+            )
+            result = built(build_key(doc))
+            if not result["checks"]["passed"]:
+                raise ValueError(
+                    "Component insertion could not regenerate: "
+                    + str(result["checks"].get("error"))
+                )
+        saved = save_document(
+            doc,
+            cad_lock,
+            body.parent_id,
+            ("Edit" if body.feature_id else "Insert")
+            + " component · "
+            + record["name"],
+        )
+        saved["selected_feature_id"] = ident
+        return saved
+
+    @router.post("/components/import")
+    def import_component(body: ComponentImportBody):
+        if Path(body.filename).suffix.lower() not in (".step", ".stp", ".stl", ".obj"):
+            raise ValueError("Insert a STEP, STP, STL or OBJ component")
+        if body.parent_id is None:
+            raise ValueError("Select a saved parent design")
+        parent = read_document(body.parent_id, cad_lock)
+        doc = normalize_document(body.document)
+        if parent["document"] != doc:
+            raise HTTPException(
+                409, "Save or discard local edits before inserting a component"
+            )
+        imported = parse_import(body)
+        feature = imported["features"][0]
+        feature["params"].update(translation=body.translation, rotation=body.rotation)
+        doc["features"].append(feature)
+        doc["metadata"].setdefault("component_instances", {})[feature["id"]] = {
+            "catalog_id": None,
+            "name": feature["name"],
+            "asset_id": feature["params"]["asset_id"],
+            "source": body.filename,
+            "license": "User-supplied; verify permission",
+            "parameters": {},
+            "scope": "Imported geometry; original parametric feature history is not recovered.",
+            **imported.get("metadata", {}),
+        }
+        with cad_lock:
+            result = built(build_key(doc))
+            if not result["checks"]["passed"]:
+                raise ValueError(
+                    "Component insertion could not regenerate: "
+                    + str(result["checks"].get("error"))
+                )
+        saved = save_document(
+            doc, cad_lock, body.parent_id, "Insert file component · " + imported["name"]
+        )
+        saved["selected_feature_id"] = feature["id"]
+        return saved
 
     @router.post("/measure")
     def measure(body: MeasureBody):
@@ -1024,7 +1141,13 @@ def create_router(cad_lock, crate_reader=None):
                     active = previous["status"] in ("queued", "running")
                     reusable = previous.get("proposal", {}).get("status") == "ready"
                     if active or (not body.regenerate and reusable):
-                        return deepcopy(previous)
+                        return deepcopy(
+                            {
+                                key: value
+                                for key, value in previous.items()
+                                if not key.startswith("_")
+                            }
+                        )
             if any(x["status"] in ["queued", "running"] for x in JOBS.values()):
                 raise HTTPException(409, "A Studio proposal is already running")
             id = "studio-" + uuid.uuid4().hex[:12]
@@ -1043,6 +1166,19 @@ def create_router(cad_lock, crate_reader=None):
                 JOBS[id]["stage"] = message
                 JOBS[id]["events"].append({"kind": kind, "message": message})
 
+        def preview(document, candidate_id):
+            value = snapshot(document, cad_lock)
+            with JOBS_LOCK:
+                sequence = JOBS[id].get("preview", {}).get("sequence", 0) + 1
+                JOBS[id]["_preview_snapshot"] = value
+                JOBS[id]["preview"] = {
+                    "sequence": sequence,
+                    "candidate_id": candidate_id,
+                    "feature_count": len(document["features"]),
+                    "base_document_id": body.document_id,
+                    "scope": "Working native geometry; not applied or mechanically approved",
+                }
+
         def work():
             try:
                 JOBS[id]["status"] = "running"
@@ -1054,6 +1190,11 @@ def create_router(cad_lock, crate_reader=None):
                     body.prompt,
                     asset_loader=asset_path,
                     on_event=event,
+                    **(
+                        {"on_preview": preview, "component_store": store_asset}
+                        if body.agent_mode == "tools"
+                        else {}
+                    ),
                     run_id=id,
                     geometry_lock=cad_lock,
                     selection_context={
@@ -1080,14 +1221,42 @@ def create_router(cad_lock, crate_reader=None):
                     )
 
         threading.Thread(target=work, daemon=True).start()
-        return deepcopy(JOBS[id])
+        with JOBS_LOCK:
+            return deepcopy(
+                {
+                    key: value
+                    for key, value in JOBS[id].items()
+                    if not key.startswith("_")
+                }
+            )
 
     @router.get("/jobs/{id}")
     def get_job(id: str):
         with JOBS_LOCK:
             if id not in JOBS:
                 raise HTTPException(404, "Proposal not found")
-            return deepcopy(JOBS[id])
+            return deepcopy(
+                {
+                    key: value
+                    for key, value in JOBS[id].items()
+                    if not key.startswith("_")
+                }
+            )
+
+    @router.get("/jobs/{id}/preview")
+    def get_preview(id: str, sequence: int | None = None):
+        with JOBS_LOCK:
+            job = JOBS.get(id)
+            if job is None:
+                raise HTTPException(404, "Proposal not found")
+            if "preview" not in job:
+                raise HTTPException(404, "No native candidate is available yet")
+            if sequence is not None and sequence != job["preview"]["sequence"]:
+                raise HTTPException(409, "Draft advanced; refresh the preview")
+            return {
+                "preview": deepcopy(job["preview"]),
+                "snapshot": deepcopy(job["_preview_snapshot"]),
+            }
 
     @router.post("/proposals/{id}/apply")
     def apply_proposal(id: str):
@@ -1228,6 +1397,20 @@ def create_router(cad_lock, crate_reader=None):
                         )
                 (folder / "project.json").write_text(
                     json.dumps(portable, indent=2, ensure_ascii=False, allow_nan=False),
+                    encoding="utf-8",
+                )
+                from .component_library import instances
+
+                (folder / "library-components.json").write_text(
+                    json.dumps(
+                        {
+                            "scope": "Declared source component instances, including suppressed features; downstream patterns/booleans can change final body quantities and geometry.",
+                            "instances": instances(value["document"]),
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                        allow_nan=False,
+                    ),
                     encoding="utf-8",
                 )
                 (folder / "export-manifest.json").write_text(
