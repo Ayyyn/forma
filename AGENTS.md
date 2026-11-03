@@ -10,3 +10,12 @@ For work on Forma CAD (`crate_studio`, its evaluation/research helpers, examples
 - Documentation maintenance itself should not trigger paid calls, new evaluations, publication, deployment or product changes. Continue within the user's current requested scope.
 
 These continuity rules apply to Forma work. Preserve the independent scope and evidence of earlier research modules.
+
+## Muse design-agent standard
+
+- Follow `docs/FORMA_AGENT_DESIGN.md` when evolving the design pipeline. Correctness, practical usefulness, visual judgment and measured latency are product requirements.
+- Give Muse callable access to relevant available engineering tools; do not confuse a documented tool or a prompt instruction with an implemented integration. Report unsupported tools/operations explicitly.
+- Preserve mechanism freedom: propose and compare mechanisms from the user's requirements rather than silently forcing a preselected template. Distinguish developer-authored baselines, model proposals and deterministic solver decisions.
+- Real manufacturing deliverables require finite-thickness geometry and revision-bound verification. An attractive render, valid solid or sampled motion alone does not establish a working physical mechanism.
+- Keep requirements and assumptions inspectable and human-editable. Do not relax requirements to pass a check. Visual taste is a review criterion, never a substitute for functional acceptance.
+- Prefer exact reuse and staged checks for speed; measure improvements without reducing validation quality. Add model roles only when a controlled comparison supports their cost/quality trade-off.
