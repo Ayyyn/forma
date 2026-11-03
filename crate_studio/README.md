@@ -67,7 +67,7 @@ BREP validity, pairwise positive-volume collisions, clear-cavity intrusion, pane
 
 `agent.py` uses `muse-wonder-1.0` to interpret revisions, preserve retained requirements, cite source text and choose a stock-size search. It can review checker feedback in one additional call. Geometry and numerical verdicts are computed by fixed code; the model cannot execute arbitrary source code or claim its own numerical result passed.
 
-Exact source quotes establish provenance, not proof that intent was correctly interpreted. The interface shows a proposal before approval. A $25 conservative estimated app budget (raised from $10 with user approval on November 2, 2026) covers persisted calls in `output/forma/agent` and `output/forma/studio/agent`; estimates use provisional $4/M input and $20/M output prices and are not verified billing. A missing usage response consumes its full request reservation. Calls are serialized in the server process. Remaining provider credits were not verified.
+Exact source quotes establish provenance, not proof that intent was correctly interpreted. The interface shows a proposal before approval. A configurable shared application guard covers persisted calls in `output/forma/agent` and `output/forma/studio/agent`; estimates and conservative reservations are not verified provider billing. A missing usage response consumes its full request reservation. Calls are serialized in the server process. Remaining provider credits were not verified. See [Muse design tools](../docs/FORMA_DESIGN_TOOLS.md) for the opt-in native inspection, floor, motion and visual-review loop.
 
 ## Verification commands
 

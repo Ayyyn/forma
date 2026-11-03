@@ -23,6 +23,9 @@ TOOL_VERSION = hashlib.sha256(
         for name in (
             "design_tools.py",
             "mechanism_study.py",
+            "motion_probe.py",
+            "component_exports.py",
+            "floor_check.py",
             "workspace_agent.py",
             "workspace_drawing.py",
             "workspace_workflow.py",
@@ -110,8 +113,83 @@ _STRING = {"type": "string"}
 _CID = {"candidate_id": _STRING}
 
 
+def report_key(name, arguments):
+    if name == "check_floor":
+        state = arguments.get("state_name")
+        return "floor:static" if state is None else "floor:state:" + str(state)
+    if name == "render_state":
+        return "visual:state:" + str(arguments.get("state_name"))
+    return {
+        "check_interference": "interference",
+        "check_motion": "motion",
+        "check_folding": "motion",
+        "render_views": "visual",
+        "verify_exports": "exports",
+    }.get(name)
+
+
 def tool_definitions():
     rows = [
+        (
+            "probe_translation",
+            "Release virtual constraints and probe an unwanted rigid translation of selected bodies against the others. Useful for finding missing real guide/retention geometry. Direction is WORLD coordinates; use several directions and named sizes. An obstruction is NOT proof of captivity or a working lock. Returns exact native sampled intersections and their bounds.",
+            _object(
+                {
+                    **_CID,
+                    "moving_part_ids": {"type": "array", "items": _STRING},
+                    "direction": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 3,
+                        "maxItems": 3,
+                    },
+                    "max_distance_mm": {"type": "number"},
+                    "samples": {"type": "integer"},
+                    "mechanism_spec": {"type": ["object", "null"]},
+                    "state_name": {"type": ["string", "null"]},
+                }
+            ),
+        ),
+        (
+            "render_state",
+            "Render actual native solids in one named mechanism state, with exact outer bounds. Review compactness, protrusions and seams in every named state, not just the construction pose. This does not qualify physical guides or locks.",
+            _object(
+                {**_CID, "mechanism_spec": {"type": "object"}, "state_name": _STRING}
+            ),
+        ),
+        (
+            "check_floor",
+            "Check actual horizontal floor/support coverage, including gaps and holes, in one declared current or named mechanism state. Returns a diagnostic image. This measures projection in a declared Z band, not floor strength, flatness, locks or retained engagement. Use mechanism_spec=null,state_name=null for static CAD.",
+            _object(
+                {
+                    **_CID,
+                    "footprint": _object(
+                        {
+                            "center_xy": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "minItems": 2,
+                                "maxItems": 2,
+                            },
+                            "size_mm": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "minItems": 2,
+                                "maxItems": 2,
+                            },
+                            "z_range_mm": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "minItems": 2,
+                                "maxItems": 2,
+                            },
+                        }
+                    ),
+                    "mechanism_spec": {"type": ["object", "null"]},
+                    "state_name": {"type": ["string", "null"]},
+                }
+            ),
+        ),
         (
             "record_strategy",
             "Record a concise design strategy before CAD: compare alternatives, select one, list assumptions and a small-step implementation plan. This records model decisions, not verified engineering results.",
@@ -125,7 +203,10 @@ def tool_definitions():
                             {"name": _STRING, "benefit": _STRING, "risk": _STRING}
                         ),
                     },
-                    "selected": _STRING,
+                    "selected": {
+                        "type": "string",
+                        "description": "Copy the exact name of ONE alternative above; do not put a prose explanation here.",
+                    },
                     "assumptions": {"type": "array", "items": _STRING, "maxItems": 12},
                     "steps": {
                         "type": "array",
@@ -280,6 +361,7 @@ class DesignSession:
         self.events = []
         self.finished = None
         self.strategy = None
+        self.native_interference = {}
 
     def _candidate(self, ident):
         if not isinstance(ident, str) or ident not in self.candidates:
@@ -347,27 +429,15 @@ class DesignSession:
             if key in self.cache:
                 hit = True
                 result = deepcopy(self.cache[key])
-                report_key = {
-                    "check_interference": "interference",
-                    "check_motion": "motion",
-                    "check_folding": "motion",
-                    "render_views": "visual",
-                    "verify_exports": "exports",
-                }.get(name)
-                if report_key:
-                    self.reports.setdefault(referenced, {})[report_key] = deepcopy(
+                key_for_report = report_key(name, arguments)
+                if key_for_report:
+                    self.reports.setdefault(referenced, {})[key_for_report] = deepcopy(
                         self.cached_reports[key]
                     )
             else:
-                report_key = {
-                    "check_interference": "interference",
-                    "check_motion": "motion",
-                    "check_folding": "motion",
-                    "render_views": "visual",
-                    "verify_exports": "exports",
-                }.get(name)
-                if report_key:
-                    self.reports.setdefault(referenced, {}).pop(report_key, None)
+                key_for_report = report_key(name, arguments)
+                if key_for_report:
+                    self.reports.setdefault(referenced, {}).pop(key_for_report, None)
                 with (
                     self.geometry_lock
                     if self.geometry_lock is not None
@@ -376,16 +446,10 @@ class DesignSession:
                     result = self._dispatch(name, arguments)
                 if name not in ("finish_design", "record_strategy"):
                     self.cache[key] = deepcopy(result)
-                    report_key = {
-                        "check_interference": "interference",
-                        "check_motion": "motion",
-                        "check_folding": "motion",
-                        "render_views": "visual",
-                        "verify_exports": "exports",
-                    }.get(name)
-                    if report_key:
+                    key_for_report = report_key(name, arguments)
+                    if key_for_report:
                         self.cached_reports[key] = deepcopy(
-                            self.reports[referenced][report_key]
+                            self.reports[referenced][key_for_report]
                         )
             result = {"ok": True, **result}
         except Exception as exc:
@@ -482,11 +546,31 @@ class DesignSession:
                 **proposal,
                 "changes": base["changes"] + proposal["changes"],
             }
+            built = self._build(ident)
+            screen = {
+                "checked": False,
+                "scope": "Explicit check_interference required for larger candidates",
+            }
+            if built["checks"]["passed"] and len(built["parts"]) <= 24:
+                from .folding import collisions
+
+                screen = collisions(built["parts"], details=True)
+                screen.update(
+                    checked=True,
+                    passed=not screen["overlaps"],
+                    scope="Default source pose only; shared with explicit interference check. Fix default-pose overlap before an expensive motion sweep.",
+                )
+                self.reports.setdefault(ident, {})["interference"] = deepcopy(screen)
+                self.native_interference[ident] = {
+                    "assets": asset_identity(proposal["document"], self.asset_loader),
+                    "result": deepcopy(screen),
+                }
             return {
                 "candidate_id": ident,
                 "status": proposal["status"],
                 "result": proposal["result"],
-                "parts": self._metrics(self._build(ident)),
+                "parts": self._metrics(built),
+                "interference_screen": screen,
                 "note": "Trial geometry only; not an applied project or a verified physical mechanism",
             }
         ident = a["candidate_id"]
@@ -540,10 +624,63 @@ class DesignSession:
         if name == "check_interference":
             from .folding import collisions
 
-            value = collisions(built["parts"])
+            cached = self.native_interference.get(ident)
+            if cached and cached["assets"] == asset_identity(doc, self.asset_loader):
+                reports["interference"] = deepcopy(cached["result"])
+                return {**reports["interference"], "native_work_reused": True}
+            value = collisions(built["parts"], details=True)
             reports["interference"] = {**value, "passed": not value["overlaps"]}
+            self.native_interference[ident] = {
+                "assets": asset_identity(doc, self.asset_loader),
+                "result": deepcopy(reports["interference"]),
+            }
             return reports["interference"]
+        if name == "check_floor":
+            from .floor_check import floor_coverage, render_coverage
+            from .mechanism_study import validate_spec, pose_matrices, moved_parts
+
+            parts = built["parts"]
+            spec = None
+            if a["mechanism_spec"] is not None:
+                spec = validate_spec(a["mechanism_spec"], [p["id"] for p in parts])
+                matches = [s for s in spec["states"] if s["name"] == a["state_name"]]
+                if not matches:
+                    raise ValueError("Choose an existing named mechanism state")
+                parts = moved_parts(parts, pose_matrices(spec, matches[0]["values"]))
+            elif a["state_name"] is not None:
+                raise ValueError("A named state requires its complete mechanism_spec")
+            value, target, support, missing = floor_coverage(parts, a["footprint"])
+            value.update(
+                geometry_signature=geometry_signature(doc),
+                mechanism_spec=spec,
+                state_name=a["state_name"],
+            )
+            folder = self.folder / ident
+            folder.mkdir(parents=True, exist_ok=True)
+            stem = (
+                "floor-"
+                + hashlib.sha256(
+                    json.dumps(a, sort_keys=True, allow_nan=False).encode()
+                ).hexdigest()[:12]
+            )
+            image_path = folder / (stem + ".png")
+            render_coverage(
+                target,
+                support,
+                missing,
+                image_path,
+                "Support coverage · " + str(a["state_name"] or "current pose"),
+            )
+            value["image_artifact"] = f"{ident}/{stem}.png"
+            value["image_sha256"] = hashlib.sha256(image_path.read_bytes()).hexdigest()
+            reports[report_key(name, a)] = value
+            self._write_json(ident, stem + ".json", value)
+            return value
         if name in ("check_motion", "check_folding"):
+            if reports.get("interference", {}).get("passed") is False:
+                raise ValueError(
+                    "Default source pose has interference; fix the draft's interference_screen before running a motion sweep"
+                )
             if name == "check_motion":
                 from .mechanism_study import mechanism_study
 
@@ -575,13 +712,82 @@ class DesignSession:
             }
         if name == "render_views":
             return self._render(ident, built)
+        if name == "probe_translation":
+            from .motion_probe import translation_probe
+
+            value = translation_probe(
+                built["parts"],
+                a["moving_part_ids"],
+                a["direction"],
+                a["max_distance_mm"],
+                a["samples"],
+                a["mechanism_spec"],
+                a["state_name"],
+            )
+            stem = (
+                "probe-"
+                + hashlib.sha256(json.dumps(a, sort_keys=True).encode()).hexdigest()[
+                    :12
+                ]
+            )
+            self._write_json(ident, stem + ".json", value)
+            return {**value, "evidence": ident + "/" + stem + ".json"}
+        if name == "render_state":
+            from .mechanism_study import validate_spec, pose_matrices, moved_parts
+            from .workspace_geometry import _mesh
+            import cadquery as cq
+
+            spec = validate_spec(a["mechanism_spec"], [p["id"] for p in built["parts"]])
+            selected = [
+                state for state in spec["states"] if state["name"] == a["state_name"]
+            ]
+            if not selected:
+                raise ValueError("Choose an existing named mechanism state")
+            parts = moved_parts(
+                built["parts"], pose_matrices(spec, selected[0]["values"])
+            )
+            bounds = _bounds(cq.Compound.makeCompound([p["shape"] for p in parts]))
+            metrics = {
+                "bounds_mm": bounds,
+                "size_mm": [bounds[1][i] - bounds[0][i] for i in range(3)],
+                "solid_count": len(parts),
+                "volume_mm3": sum(p["shape"].Volume() for p in parts),
+            }
+            posed = {
+                "mesh": [{"id": p["id"], **_mesh(p["shape"])} for p in parts],
+                "metrics": metrics,
+            }
+            stem = (
+                "state-"
+                + hashlib.sha256(
+                    json.dumps([spec, a["state_name"]], sort_keys=True).encode()
+                ).hexdigest()[:12]
+            )
+            key = report_key(name, a)
+            result = self._render(
+                ident,
+                posed,
+                stem=stem,
+                report_name=key,
+                heading="Named state · " + a["state_name"],
+            )
+            result.update(
+                state_name=a["state_name"],
+                metrics=metrics,
+                mechanism_spec=spec,
+                visual_report_key=key,
+            )
+            reports[key] = result
+            return result
         if name == "verify_exports":
             from .workspace_drawing import export_drawings
+            from .component_exports import export_components
 
             folder = self.folder / ident / "exports"
             value = export_document(doc, self.asset_loader, folder)
             if value["checks"]["passed"]:
                 export_drawings(doc, built["parts"], folder)
+                value["checks"]["components"] = export_components(built, folder)
             files = {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in folder.iterdir()
@@ -604,6 +810,51 @@ class DesignSession:
                     )
             if "motion" in reports and not reports["motion"]["passed"]:
                 raise ValueError("Selected candidate has a failed motion study")
+            for key, value in reports.items():
+                if not key.startswith("floor:"):
+                    continue
+                if not value["passed"]:
+                    raise ValueError(
+                        "Selected candidate has a failed floor coverage check"
+                    )
+                if value["mechanism_spec"] is not None:
+                    if "motion" not in reports or "spec" not in reports["motion"]:
+                        raise ValueError(
+                            "Named-state floor coverage requires a passing general motion study"
+                        )
+                    without_samples = lambda spec: {
+                        k: v for k, v in spec.items() if k != "samples_per_segment"
+                    }
+                    if without_samples(value["mechanism_spec"]) != without_samples(
+                        reports["motion"]["spec"]
+                    ):
+                        raise ValueError(
+                            "Floor coverage and motion use different mechanism definitions"
+                        )
+            if any(key.startswith("floor:state:") for key in reports):
+                missing = [
+                    state["name"]
+                    for state in reports["motion"]["spec"]["states"]
+                    if "floor:state:" + state["name"] not in reports
+                ]
+                if missing:
+                    raise ValueError(
+                        "Missing floor coverage for mechanism states: "
+                        + ", ".join(missing)
+                    )
+                for state in reports["motion"]["spec"]["states"]:
+                    view = reports.get("visual:state:" + state["name"], {})
+                    if not view.get("passed"):
+                        raise ValueError(
+                            "Render and review the actual named state before selecting: "
+                            + state["name"]
+                        )
+                    if without_samples(view["mechanism_spec"]) != without_samples(
+                        reports["motion"]["spec"]
+                    ):
+                        raise ValueError(
+                            "Named-state visual review uses a different mechanism definition"
+                        )
             for key in ("summary", "visual_review"):
                 if not isinstance(a[key], str) or not 10 <= len(a[key]) <= 3000:
                     raise ValueError(f"{key} requires a concrete bounded explanation")
@@ -668,11 +919,20 @@ class DesignSession:
             json.dumps(value, indent=2, allow_nan=False), encoding="utf-8"
         )
 
-    def acknowledge_views(self, ident):
+    def acknowledge_views(self, ident, report_name="visual"):
         """Driver calls only after a successful model request containing this image."""
-        self.reports[ident]["visual"].update(passed=True, image_delivered_to_model=True)
+        self.reports[ident][report_name].update(
+            passed=True, image_delivered_to_model=True
+        )
 
-    def _render(self, ident, built):
+    def _render(
+        self,
+        ident,
+        built,
+        stem="views",
+        report_name="visual",
+        heading="Native CAD review · dimensions in mm",
+    ):
         import matplotlib
 
         matplotlib.use("Agg")
@@ -714,17 +974,17 @@ class DesignSession:
             ax.view_init(elev=elev, azim=azim)
             ax.set_axis_off()
             ax.set_title(title, fontsize=10)
-        fig.suptitle("Native CAD review · dimensions in mm", fontsize=12)
-        path = folder / "views.png"
+        fig.suptitle(heading, fontsize=12)
+        path = folder / (stem + ".png")
         fig.savefig(path, dpi=95, bbox_inches="tight", facecolor=fig.get_facecolor())
         plt.close(fig)
         report = {
             "passed": False,
             "rendered": True,
-            "artifact": f"{ident}/views.png",
+            "artifact": f"{ident}/{stem}.png",
             "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             "image_delivered_to_model": False,
             "scope": "Image generated; driver must deliver it to the model before final selection. Delivery and written review are not automatic aesthetic approval.",
         }
-        self.reports.setdefault(ident, {})["visual"] = report
+        self.reports.setdefault(ident, {})[report_name] = report
         return report

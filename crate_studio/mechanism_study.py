@@ -174,6 +174,18 @@ def _connection_errors(spec, matrices):
     return position, angle
 
 
+def moved_parts(parts, matrices):
+    """Apply only rigid native locations; preserve finite solid geometry."""
+    moved = []
+    for part in parts:
+        transform = gp_Trsf()
+        transform.SetValues(*[float(x) for x in matrices[part["id"]][:3, :].ravel()])
+        moved.append(
+            {"id": part["id"], "shape": part["shape"].moved(cq.Location(transform))}
+        )
+    return moved
+
+
 def mechanism_study(document, built, raw):
     if not built["checks"]["passed"]:
         raise ValueError("Mechanism study requires valid native solids")
@@ -191,19 +203,8 @@ def mechanism_study(document, built, raw):
                 for key in start["values"]
             }
             matrices = pose_matrices(spec, values)
-            moved = []
-            for part in parts:
-                transform = gp_Trsf()
-                transform.SetValues(
-                    *[float(x) for x in matrices[part["id"]][:3, :].ravel()]
-                )
-                moved.append(
-                    {
-                        "id": part["id"],
-                        "shape": part["shape"].moved(cq.Location(transform)),
-                    }
-                )
-            check = collisions(moved)
+            moved = moved_parts(parts, matrices)
+            check = collisions(moved, details=True)
             position, angle = _connection_errors(spec, matrices)
             bounds = _bounds(cq.Compound.makeCompound([p["shape"] for p in moved]))
             frames.append(
@@ -234,6 +235,18 @@ def mechanism_study(document, built, raw):
         "sample_count": len(frames),
         "collision_sample_count": sum(bool(f["overlaps"]) for f in frames),
         "max_loop_position_error_mm": max(f["loop_position_error_mm"] for f in frames),
+        "sampling_resolution": {
+            joint["id"]: {
+                "max_step": max(
+                    abs(b["values"][joint["id"]] - a["values"][joint["id"]])
+                    / (spec["samples_per_segment"] - 1)
+                    for a, b in zip(spec["states"], spec["states"][1:])
+                ),
+                "unit": "deg" if joint["type"] == "revolute" else "mm",
+            }
+            for joint in spec["joints"]
+        },
+        "continuous_motion_proven": False,
         "physical_joint_hardware_verified": False,
         "locking_verified": False,
         "physical_validation": False,

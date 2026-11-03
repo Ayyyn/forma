@@ -81,6 +81,7 @@ export function createWorkflow(bridge) {
   $("#project-req-fields").innerHTML = fields(reqFields, "req-");
   $("#motion-tab").innerHTML =
     `<div class="motion-layout"><div class="motion-heading"><div><small>FINITE-THICKNESS MOTION</small><h1>Wall folding</h1><p id="motion-state">Build an open enclosure in Project to begin.</p></div><div class="motion-heading-actions"><button id="motion-focus">Focus view</button><button id="motion-run" class="primary">Run motion study</button></div></div><div class="motion-settings"><label>Maximum angle <input id="motion-max" type="number" min="1" max="90" value="90"> °</label><label>Sample poses <select id="motion-samples"><option>19</option><option selected>37</option><option>73</option></select></label></div><div id="motion-viewport" aria-label="Interactive folding simulation"></div><div class="motion-controls"><button id="motion-play" disabled>▶ Play</button><label>Wall angle <input type="range" id="motion-angle" min="0" max="90" step="0.1" value="0" disabled></label><output id="motion-angle-label">0°</output><button id="motion-reset">Reset</button><button id="motion-fit">Fit</button><button id="motion-save" disabled>Save study settings</button></div><div class="motion-analysis"><div id="motion-metrics">Simulation is bound to the current enclosure definition.</div><svg id="motion-chart" viewBox="0 0 600 105" role="img" aria-label="Outside envelope through wall motion"></svg><details><summary>Model assumptions</summary><p id="motion-scope">Virtual hinges, rigid panels and prescribed outward motion. Hardware and structural behavior require separate validation.</p></details></div></div>`;
+  $("#motion-tab .motion-settings").insertAdjacentHTML("afterend", '<div id="motion-states" class="motion-states hidden" aria-label="Named mechanism states"></div>');
   $("#canvas-tab").innerHTML =
     `<div class="canvas-toolbar"><strong>Project canvas</strong><span id="canvas-revision"></span><button id="canvas-minus" aria-label="Zoom canvas out">−</button><output id="canvas-zoom">80%</output><button id="canvas-plus" aria-label="Zoom canvas in">＋</button><button id="canvas-fit">Fit all</button></div><div id="workflow-board" tabindex="0" aria-label="Project stage canvas; drag empty space to pan, wheel to zoom"><div id="workflow-world-size"><div id="workflow-world"><svg class="workflow-connectors" width="3100" height="760" aria-hidden="true"><path d="M 450 340 H 2740" stroke="#d3c7b5" stroke-width="2" fill="none" stroke-dasharray="6 6"/></svg><div id="workflow-cards"></div></div></div></div><div class="canvas-pip"><img id="canvas-pip-image" alt="Current CAD model overview"><span>Current revision</span></div><div id="canvas-map" aria-label="Canvas minimap"><div id="canvas-map-cards"></div><div id="canvas-map-view"></div></div><div class="canvas-hint">Drag background to pan · Wheel to zoom · Shift-wheel to scroll · Double-click a stage to open</div>`;
 
@@ -320,8 +321,12 @@ export function createWorkflow(bridge) {
   function fitMotion() {
     if (!study || !camera || !group) return;
     group.updateMatrixWorld(true);
-    const bounds = new THREE.Box3().setFromObject(group),
-      center = bounds.getCenter(new THREE.Vector3());
+    const bounds = new THREE.Box3().setFromObject(group);
+    if (study?.family === "general_mechanism") study.frames.forEach(frame => {
+      bounds.expandByPoint(new THREE.Vector3(...frame.bounds_mm[0]));
+      bounds.expandByPoint(new THREE.Vector3(...frame.bounds_mm[1]));
+    });
+    const center = bounds.getCenter(new THREE.Vector3());
     const direction = new THREE.Vector3(0.75, -0.95, 0.8).normalize();
     const right = new THREE.Vector3()
       .crossVectors(direction, new THREE.Vector3(0, 0, 1))
@@ -401,8 +406,19 @@ export function createWorkflow(bridge) {
       group.add(pivot);
     });
     scene.add(group);
+    const stateButtons = $("#motion-states");
+    stateButtons.classList.toggle("hidden", value.family !== "general_mechanism");
+    stateButtons.innerHTML = value.family === "general_mechanism" ? value.spec.states.map((state,index) => {
+      const frame = index === 0 ? value.frames[0] : value.frames.find(frame => frame.segment === index - 1 && Math.abs(frame.fraction - 1) < 1e-8);
+      return `<button type="button" data-progress="${frame.progress_pct}" aria-pressed="false">${escape(state.name)}</button>`;
+    }).join("") : "";
+    stateButtons.querySelectorAll("button").forEach(button => button.addEventListener("click", () => {
+      playing = false; $("#motion-play").textContent = "▶ Play"; updateAngle(Number(button.dataset.progress));
+    }));
     $("#motion-angle").max = value.config.progress_max ?? value.config.max_angle_deg;
-    $("#motion-angle").step = value.family==="general_mechanism" ? 100/(value.frames.length-1) : value.family==="panel_hinges" ? value.config.max_angle_deg/(value.frames.length-1) : .1;
+    // The native studies already snap to their nearest verified frame. A
+    // fractional HTML step can round the final 100% value down by one frame.
+    $("#motion-angle").step = value.family === "general_mechanism" || value.family === "panel_hinges" ? "any" : ".1";
     $("#motion-angle").disabled = false;
     $("#motion-play").disabled = false;
     $("#motion-save").disabled = value.family === "general_mechanism";
@@ -425,6 +441,7 @@ export function createWorkflow(bridge) {
       const frame = study.frames.reduce((a,b) => Math.abs(b.progress_pct-angle) < Math.abs(a.progress_pct-angle) ? b : a);
       $("#motion-angle").value = frame.progress_pct;
       $("#motion-angle-label").textContent = num(frame.progress_pct) + "%";
+      $("#motion-states").querySelectorAll("button").forEach(button => button.setAttribute("aria-pressed", String(Math.abs(Number(button.dataset.progress) - frame.progress_pct) < 1e-7)));
       const hits = frame.overlaps.flatMap(pair => pair.parts);
       group.children.forEach(mesh => {
         mesh.matrix.set(...frame.pose_matrices[mesh.userData.part.id].flat());
@@ -733,6 +750,7 @@ export function createWorkflow(bridge) {
     update(value) {
       snapshot = value;
       const general = value.document.metadata?.design_mechanism;
+      $("#motion-samples").parentElement.firstChild.textContent = general ? "Samples per transition " : "Sample poses ";
       $("#motion-tab h1").textContent=general ? "Mechanism motion" : value.folding ? value.folding.family.replaceAll("_"," ").replace(/^./,c=>c.toUpperCase())+" folding" : "Wall folding";
       $("#motion-max").disabled = !!general;
       $("#motion-max").parentElement.classList.toggle("hidden", !!general);
@@ -799,6 +817,8 @@ export function createWorkflow(bridge) {
         binding === "current" || !value.document.features.length,
       );
       if (studyKey && studyKey !== motionSignature(value)) {
+        $("#motion-states").classList.add("hidden");
+        $("#motion-states").innerHTML = "";
         study = null;
         playing = false;
         clearGroup();

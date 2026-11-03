@@ -442,7 +442,9 @@ def closure(graph, poses, hinge_height):
     return error
 
 
-def collisions(parts, tolerance_mm3=1e-5, measure_clearance=False, pair_cache=None):
+def collisions(
+    parts, tolerance_mm3=1e-5, measure_clearance=False, pair_cache=None, details=False
+):
     bounds = [_native_bounds(p["shape"]) for p in parts]
     found = []
     tested = 0
@@ -465,6 +467,7 @@ def collisions(parts, tolerance_mm3=1e-5, measure_clearance=False, pair_cache=No
             invariant
             and pair_cache is not None
             and not measure_clearance
+            and not details
             and key in pair_cache
         ):
             volume = pair_cache[key]
@@ -490,13 +493,15 @@ def collisions(parts, tolerance_mm3=1e-5, measure_clearance=False, pair_cache=No
                 pair_cache[key] = 0.0
             continue
         tested += 1
-        volume = abs(parts[i]["shape"].intersect(parts[j]["shape"]).Volume())
+        intersection = parts[i]["shape"].intersect(parts[j]["shape"])
+        volume = abs(intersection.Volume())
         if invariant and pair_cache is not None:
             pair_cache[key] = volume
         if volume > tolerance_mm3:
-            found.append(
-                dict(parts=[parts[i]["id"], parts[j]["id"]], volume_mm3=volume)
-            )
+            record = dict(parts=[parts[i]["id"], parts[j]["id"]], volume_mm3=volume)
+            if details:
+                record["bounds_mm"] = [v.tolist() for v in _native_bounds(intersection)]
+            found.append(record)
     return dict(
         overlaps=found,
         native_pair_checks=tested,

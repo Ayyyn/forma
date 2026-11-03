@@ -20,6 +20,9 @@ MODULES = (
     "test_mesh_import",
     "test_design_agent",
     "test_mechanism_study",
+    "test_floor_check",
+    "test_motion_probe",
+    "test_component_exports",
 )
 
 

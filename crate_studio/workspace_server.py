@@ -79,6 +79,7 @@ EXPORT_VERSION = hashlib.sha256(
             "workspace_geometry.py",
             "workspace_drawing.py",
             "workspace_server.py",
+            "component_exports.py",
             "workspace_requirements.py",
             "workspace_workflow.py",
             "folding_study.py",
@@ -114,7 +115,18 @@ CAPABILITIES = {
         "folding_assembly",
     ],
     "imports": ["step", "stp", "stl", "obj", "dxf", "json"],
-    "exports": ["step", "stl", "json", "svg", "pdf", "dxf", "csv", "bundle", "print"],
+    "exports": [
+        "step",
+        "stl",
+        "components",
+        "json",
+        "svg",
+        "pdf",
+        "dxf",
+        "csv",
+        "bundle",
+        "print",
+    ],
     "limits": {"features": 60, "bodies": 50, "upload_bytes": 15_000_000},
     "scope": "Declarative BREP features, dimension-driven profiles and sequential planar alignment. No native SolidWorks/AutoCAD feature history, general sketch constraint solver, simultaneous mate solver or manufacturing qualification.",
 }
@@ -1092,6 +1104,9 @@ def create_router(cad_lock, crate_reader=None):
                         result["checks"].get("error") or "Export verification failed"
                     )
                 parts = built(build_key(value["document"]))["parts"]
+                from .component_exports import export_components
+
+                export_components(built(build_key(value["document"])), folder)
                 drawing = export_drawings(value["document"], parts, folder)
                 portable = portable_document(value["document"])
                 workflow = {
@@ -1172,6 +1187,7 @@ def create_router(cad_lock, crate_reader=None):
                             "units": {
                                 "workspace.step": "mm, encoded by STEP exporter",
                                 "workspace.stl": "mm by convention; STL itself has no length-unit field",
+                                "components.zip": "Separate native bodies as individual STL files, original coordinates, mm by convention; read-back checks in components.json",
                                 "drawing.dxf": "mm, INSUNITS=4; model-space projections 1:1",
                                 "drawing.pdf": "A3 landscape; declared common model scale; print 100%",
                                 "drawing.svg": "420 x 280 mm content; declared common model scale",
@@ -1180,6 +1196,7 @@ def create_router(cad_lock, crate_reader=None):
                             },
                             "drawing_scope": "Measured overall BREP extents and complete parameter appendix with embedded Unicode font; not a complete local-feature/tolerance manufacturing drawing; user dimensions are REF",
                             "folding_print": "workspace.stl is the assembled source pose. Use the separate Folding print pack for oriented independent parts, build plates, fit coupon and assembly instructions.",
+                            "separate_bodies": "components.zip preserves independent bodies even when they touch. It is not an oriented build-plate layout or print qualification. Assembled workspace.stl can fuse movable interfaces.",
                             "curve_chord_deflection_mm": drawing["measurements"][
                                 "curve_chord_deflection_mm"
                             ],
@@ -1195,7 +1212,7 @@ def create_router(cad_lock, crate_reader=None):
                     p
                     for p in sorted(folder.iterdir())
                     if p.is_file()
-                    and p.suffix != ".zip"
+                    and (p.suffix != ".zip" or p.name == "components.zip")
                     and p.name not in ("complete.json", "sha256.json")
                 ]
                 hashes = {
@@ -1218,6 +1235,7 @@ def create_router(cad_lock, crate_reader=None):
         file = {
             "step": "workspace.step",
             "stl": "workspace.stl",
+            "components": "components.zip",
             "json": "project.json",
             "svg": "drawing.svg",
             "pdf": "drawing.pdf",

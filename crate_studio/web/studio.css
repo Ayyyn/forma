@@ -1395,6 +1395,10 @@ dialog h2 {
   background: #fff;
   padding: 3px 5px;
 }
+.study-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+.study-table th, .study-table td { padding: 5px 3px; text-align: left; border-bottom: 1px solid #e4e8ed; }
+#design-study-summary { font-size: 10px; line-height: 1.5; }
+#design-study-summary ul { padding-left: 16px; }
 .agent-result {
   border: 1px solid #e0e7f5;
   border-radius: 5px;

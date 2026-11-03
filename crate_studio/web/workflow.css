@@ -461,3 +461,6 @@
     margin-right: auto;
   }
 }
+.motion-states { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 22px 12px; }
+.motion-states button { padding: 5px 10px; border: 1px solid #d8d3ca; background: #faf8f3; border-radius: 4px; color: #5e655f; font-size: 11px; }
+.motion-states button[aria-pressed="true"] { background: #e3ebe6; border-color: #91a899; color: #344c3d; }

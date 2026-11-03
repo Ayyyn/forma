@@ -465,9 +465,11 @@ def _model_document(value):
     return value
 
 
-def paid_chat(payload, log, attempt):
+def paid_chat(payload, log, attempt, timeout=120):
     """One receipted chat request shared by bounded and tool-driven planners."""
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
+    if type(timeout) is not int or not 30 <= timeout <= 300:
+        raise ValueError("Invalid bounded provider timeout")
     if len(encoded) > 2500000:
         raise ValueError("Model context exceeds the bounded input limit")
     # Images are deliberately charged conservatively by encoded length, until
@@ -495,7 +497,11 @@ def paid_chat(payload, log, attempt):
         key = os.environ.get("MODEL_API_KEY") or os.environ.get("META_API_KEY")
         try:
             transport, body = request(
-                "https://api.meta.ai/v1", key, "/chat/completions", payload, timeout=120
+                "https://api.meta.ai/v1",
+                key,
+                "/chat/completions",
+                payload,
+                timeout=timeout,
             )
         except Exception:
             transport, body = {"status": "transport_exception"}, None

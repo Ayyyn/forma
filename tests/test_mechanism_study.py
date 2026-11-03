@@ -65,6 +65,7 @@ class MechanismStudyTests(unittest.TestCase):
         middle = result["frames"][4]["overlaps"]
         self.assertEqual(middle[0]["parts"], ["body_001", "body_002"])
         self.assertAlmostEqual(middle[0]["volume_mm3"], 32)
+        self.assertEqual(middle[0]["bounds_mm"], [[-2, -2, 0], [2, 2, 2]])
         safe = mechanism_study(doc, built, specification(10))
         self.assertTrue(safe["passed"])
         self.assertFalse(safe["locking_verified"])

@@ -54,6 +54,43 @@ def finish(ident):
 
 
 class DesignToolTests(unittest.TestCase):
+    def test_draft_interference_is_computed_once_and_blocks_wasted_sweep(self):
+        from crate_studio import folding
+
+        doc = document()
+        doc["features"][1]["params"]["cx"] = 0
+        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
+            folding, "collisions", wraps=folding.collisions
+        ) as intersections:
+            session = DesignSession(doc, "Inspect", directory)
+            draft = session.call(
+                "draft_candidate",
+                {
+                    "base_candidate_id": "base",
+                    "plan": {
+                        "summary": "Retained diagnostic geometry",
+                        "status": "ready",
+                        "operations": [],
+                        "questions": [],
+                        "evidence": [],
+                    },
+                },
+            )
+            self.assertFalse(draft["interference_screen"]["passed"])
+            self.assertTrue(draft["interference_screen"]["overlaps"][0]["bounds_mm"])
+            before = intersections.call_count
+            ident = draft["candidate_id"]
+            check = session.call("check_interference", {"candidate_id": ident})
+            self.assertFalse(check["passed"])
+            self.assertTrue(check["native_work_reused"])
+            self.assertEqual(intersections.call_count, before)
+            swept = session.call(
+                "check_motion", {"candidate_id": ident, "spec": specification()}
+            )
+            self.assertFalse(swept["ok"])
+            self.assertIn("Default source pose", swept["error"])
+            self.assertEqual(intersections.call_count, before)
+
     def test_review_identity_survives_numeric_roundtrip_and_fold_default_expansion(
         self,
     ):
@@ -243,6 +280,104 @@ class DesignToolTests(unittest.TestCase):
 
 
 class DesignAgentTests(unittest.TestCase):
+    def test_inspection_only_run_gets_construction_hint_without_losing_tools(self):
+        phase = 0
+
+        def provider(base, key, route, payload, timeout):
+            nonlocal phase
+            phase += 1
+            hints = [
+                m
+                for m in payload["messages"]
+                if isinstance(m.get("content"), str)
+                and m["content"].startswith("Progress check:")
+            ]
+            if phase == 1:
+                calls = [
+                    (
+                        "record_strategy",
+                        {
+                            "alternatives": [
+                                {
+                                    "name": "Plate",
+                                    "benefit": "Direct editable construction",
+                                    "risk": "Unqualified fit",
+                                }
+                            ],
+                            "selected": "Plate",
+                            "assumptions": [],
+                            "steps": ["Construct one plate", "Inspect native geometry"],
+                        },
+                    )
+                ] + [("feature_reference", {}) for _ in range(5)]
+            elif phase == 2:
+                self.assertEqual(len(hints), 1)
+                self.assertIn("2 model turns remaining", hints[0]["content"])
+                names = {t["function"]["name"] for t in payload["tools"]}
+                self.assertIn("probe_translation", names)
+                self.assertIn("draft_candidate", names)
+                self.assertIn(BRIEF, payload["messages"][1]["content"])
+                calls = [
+                    (
+                        "draft_candidate",
+                        {"base_candidate_id": "base", "plan": plate_plan()},
+                    )
+                ]
+            else:
+                self.assertEqual(hints, [])
+                calls = []
+            message = (
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": f"progress-{phase}-{i}",
+                            "type": "function",
+                            "function": {"name": name, "arguments": json.dumps(args)},
+                        }
+                        for i, (name, args) in enumerate(calls)
+                    ],
+                }
+                if calls
+                else {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {
+                            "status": "incomplete",
+                            "summary": "Partial CAD retained; export and visual checks remain.",
+                            "questions": [],
+                        }
+                    ),
+                }
+            )
+            return {
+                "http_status": 200,
+                "usage": {"prompt_tokens": 100, "completion_tokens": 100},
+            }, {"id": f"progress-model-{phase}", "choices": [{"message": message}]}
+
+        with tempfile.TemporaryDirectory(dir="output") as directory, patch.object(
+            wa, "RUNS", Path(directory)
+        ), patch.object(wa, "load_env"), patch.dict(
+            os.environ, {"MODEL_API_KEY": "offline-secret"}
+        ), patch.object(
+            wa.agent, "estimated_spend", return_value=0
+        ), patch.object(
+            wa, "request", side_effect=provider
+        ):
+            result = da.propose_design(
+                {"name": "New", "features": []},
+                BRIEF,
+                run_id="progress-control",
+                max_turns=3,
+            )
+            self.assertEqual(result["status"], "incomplete")
+            candidates = json.loads(
+                (Path(directory) / "progress-control/candidates.json").read_text()
+            )
+            self.assertEqual(len(candidates), 2)
+            self.assertFalse(any(c.get("design_review") for c in candidates.values()))
+
     def test_checkpoint_revalidates_tools_and_finishes_with_one_new_model_response(
         self,
     ):

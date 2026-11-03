@@ -423,11 +423,11 @@ function renderTools() {
     setTab("sketch");
     setSketchTool("rectangle");
   });
-  const exports = ["step", "stl", "json", "svg", "pdf", "dxf", "csv", "bundle", "print"];
+  const exports = ["step", "stl", "components", "json", "svg", "pdf", "dxf", "csv", "bundle", "print"];
   $("#export-menu").innerHTML = exports
     .map(
       (f) =>
-        `<button data-export="${f}">${{ step: "Solid geometry", stl: "Triangle mesh", json: "Portable project", svg: "Review drawing", pdf: "Drawing PDF", dxf: "Drawing DXF", csv: "Body list", bundle: "Design package", print: "Folding print pack" }[f]}<small>${f==="print"?"ZIP":f.toUpperCase()}</small></button>`,
+        `<button data-export="${f}">${{ step: "Solid geometry", stl: "Assembled mesh", components: "Separate body meshes", json: "Portable project", svg: "Review drawing", pdf: "Drawing PDF", dxf: "Drawing DXF", csv: "Body list", bundle: "Design package", print: "Folding print pack" }[f]}<small>${["print","components"].includes(f)?"ZIP":f.toUpperCase()}</small></button>`,
     )
     .join("");
   $$('[data-sketch-tool="rectangle"],[data-sketch-tool="circle"]').forEach(
@@ -734,6 +734,14 @@ function renderSummary() {
   ]
     .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`)
     .join("");
+  const review = state.document.metadata?.design_review;
+  $("#design-study").classList.toggle("hidden", !review);
+  if (review) {
+    const current = state.snapshot.design_review_state?.status === "current";
+    const floors = Object.entries(review.reports || {}).filter(([key]) => key.startsWith("floor:state:"));
+    const motion = review.reports?.motion;
+    $("#design-study-summary").innerHTML = `<p>${current ? "Recorded geometry checks" : "Review needs updating"}</p>${floors.length ? `<table class="study-table"><thead><tr><th>State</th><th>Floor target</th><th>Coverage</th></tr></thead><tbody>${floors.map(([,floor]) => `<tr><td>${esc(floor.state_name)}</td><td>${floor.footprint.size_mm.map(value=>fmt(value)).join(" × ")} mm</td><td>${current ? fmt(100*floor.coverage_fraction) + "%" : "Stale"}</td></tr>`).join("")}</tbody></table>` : ""}${motion ? `<p>${motion.sample_count || motion.frames?.length || ""} sampled poses · ${current ? motion.passed ? "Geometry passed" : "Issues found" : "Stale"}</p>` : ""}<details><summary>Remaining work</summary><ul>${(review.unresolved || []).map(item=>`<li>${esc(item)}</li>`).join("")}</ul></details>`;
+  }
 }
 
 function renderFeedback() {
@@ -2106,7 +2114,7 @@ async function exportDocument(format) {
     );
     a.download =
       match?.[1] ||
-      `${state.document.name || "design"}.${["bundle","print"].includes(format) ? "zip" : format}`;
+      `${state.document.name || "design"}.${["bundle","print","components"].includes(format) ? "zip" : format}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     status("Export downloaded");
@@ -2177,7 +2185,7 @@ document.addEventListener("click", async (e) => {
   const ex = target.closest("[data-export]");
   if (ex) {
     if (ex.dataset.export!=="print") exportDocument(ex.dataset.export);
-    else if (!state.snapshot.folding) toast("Choose a folding assembly for articulated print preparation. Other models export as STL.",true);
+    else if (!state.snapshot.folding) toast("Choose Separate body meshes for individual STL parts. Folding print packs require a supported folding assembly.",true);
     else if (state.pending || state.inspectorDirty || state.agentPreview) toast("Save or discard parameter edits before preparing a print pack.",true);
     else {
       const p=state.document.metadata?.print_settings || {};
