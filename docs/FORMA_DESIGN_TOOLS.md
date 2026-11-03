@@ -16,6 +16,10 @@ General motion accepts model-declared root-first fixed/revolute/prismatic trees 
 
 `probe_prismatic_pair` batches both axial signs and four orthogonal transverse directions for one actual parent/child interface. Directions follow the parent's current rotation. It excludes other components so an unrelated floor cannot masquerade as a guide. Use it alongside whole-assembly motion/interference; existing interface walls can also obstruct probes without proving manufactured guidance or print fit.
 
+For repeated named-state diagnostics, `mechanism_spec: {}` refers to this exact candidate's latest recorded `check_motion` spec. Resolution occurs before cache lookup, so changing the recorded motion cannot reuse old probe results. New candidates and changed imported assets require a fresh motion check. Original and resolved arguments are retained; explicit full specs remain available.
+
+Lock diagnostics need matched locked and unlocked controls on the same physically moving group. A jam or another corner's obstruction can look like a lock. Check coordinated adjustment modes where the mechanism requires parts to move together. Sampled native obstruction does not measure friction, hand force or strength.
+
 No general force solver, arbitrary sketch constraint solver, autonomous novelty assessment, unrestricted code execution or reference-browser tool is implemented in this mode. Unsupported work remains explicit rather than being silently replaced by a folding template.
 
 ## Editable rigid components
@@ -31,6 +35,10 @@ Repeated general motion studies reuse complete native reports only for the same 
 Failed STL checks include bounded edge-incidence diagnostics with coordinates and the actual affected component's read-back result. Separate component diagnostics remain available when an assembled mesh fails. No automatic mesh repair or relaxed acceptance occurs; component success cannot bypass an assembled-export failure at selection.
 
 For a retained named-state floor study, Properties → **Recheck native study** reruns the existing floor targets, whole sampled motion, source interference and strict exports without a model call. It saves a new revision with source/tool/asset/target-bound numeric evidence. Changed geometry or targets makes it stale; failures remain failures. This does not regenerate a design, replace the earlier model's visual assessment, change requirements, or verify physical locks/strength/print fit. It provides an inexpensive way to revalidate human revisions without asking the model to repeat numerical work.
+
+Newly named states can retain explicit footprints in `metadata.native_study_targets.states`, with separate origin/author metadata. Every declared motion state needs a target. This keeps human/native targets separate from an earlier model review; missing targets fail and changing a target invalidates numeric evidence.
+
+Motion → **Download video** records the complete checked path forward and back as a local 1280 × 720 WebM, with source revision, dimensions and scope visible in the video. No model call or upload is used. The export can be cancelled; a revision/settings change discards it. Browser canvas recording support is required. The video shows prescribed native poses; contact friction, forces, print fit and physical lock qualification remain separate. Diagnostic videos of failed studies are labelled as having geometry issues.
 
 An incomplete run with retained tool actions offers **Continue design**. It requires the same original project, instruction and selection. The checkpoint replays prior native tool actions locally under current code/assets, supplies current CAD, floor-diagnostic and named-state images where present, and resumes the model conversation. Replayed actions carry zero new provider charge and retain their source run/response provenance; new responses are counted separately. Changed sources require a new proposal. This is checkpoint continuation, not a fresh design or automatic physical approval; completed projects and budgets are never reset.
 

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "/assets/vendor/OrbitControls.js";
+import { recordCanvasVideo, videoFramePlan, motionSettingsCurrent } from "/assets/motion_video.mjs";
 
 const $ = (s) => document.querySelector(s);
 const copy = (x) => JSON.parse(JSON.stringify(x));
@@ -64,6 +65,7 @@ export function createWorkflow(bridge) {
     lastTime = 0,
     travel = 1;
   let renderer, scene, camera, controls, group;
+  let videoExport = null;
   let zoom = 0.8,
     pan = null;
   const boardWidth = 3100,
@@ -82,6 +84,7 @@ export function createWorkflow(bridge) {
   $("#motion-tab").innerHTML =
     `<div class="motion-layout"><div class="motion-heading"><div><small>FINITE-THICKNESS MOTION</small><h1>Wall folding</h1><p id="motion-state">Build an open enclosure in Project to begin.</p></div><div class="motion-heading-actions"><button id="motion-focus">Focus view</button><button id="motion-run" class="primary">Run motion study</button></div></div><div class="motion-settings"><label>Maximum angle <input id="motion-max" type="number" min="1" max="90" value="90"> °</label><label>Sample poses <select id="motion-samples"><option>19</option><option selected>37</option><option>73</option></select></label></div><div id="motion-viewport" aria-label="Interactive folding simulation"></div><div class="motion-controls"><button id="motion-play" disabled>▶ Play</button><label>Wall angle <input type="range" id="motion-angle" min="0" max="90" step="0.1" value="0" disabled></label><output id="motion-angle-label">0°</output><button id="motion-reset">Reset</button><button id="motion-fit">Fit</button><button id="motion-save" disabled>Save study settings</button></div><div class="motion-analysis"><div id="motion-metrics">Simulation is bound to the current enclosure definition.</div><details><summary>Study details</summary><svg id="motion-chart" viewBox="0 0 600 105" role="img" aria-label="Outside envelope through wall motion"></svg><p id="motion-scope">Virtual hinges, rigid panels and prescribed outward motion. Hardware and structural behavior require separate validation.</p></details></div></div>`;
   $("#motion-tab .motion-settings").insertAdjacentHTML("afterend", '<div id="motion-states" class="motion-states hidden" aria-label="Named mechanism states"></div>');
+  $(".motion-heading-actions").insertAdjacentHTML("beforeend", '<button id="motion-video" disabled title="Download the complete checked path forward and back as a 1280 × 720 WebM video">Download video</button>');
   $("#canvas-tab").innerHTML =
     `<div class="canvas-toolbar"><strong>Project canvas</strong><span id="canvas-revision"></span><button id="canvas-minus" aria-label="Zoom canvas out">−</button><output id="canvas-zoom">80%</output><button id="canvas-plus" aria-label="Zoom canvas in">＋</button><button id="canvas-fit">Fit all</button></div><div id="workflow-board" tabindex="0" aria-label="Project stage canvas; drag empty space to pan, wheel to zoom"><div id="workflow-world-size"><div id="workflow-world"><svg class="workflow-connectors" width="3100" height="760" aria-hidden="true"><path d="M 450 340 H 2740" stroke="#d3c7b5" stroke-width="2" fill="none" stroke-dasharray="6 6"/></svg><div id="workflow-cards"></div></div></div></div><div class="canvas-pip"><img id="canvas-pip-image" alt="Current CAD model overview"><span>Current revision</span></div><div id="canvas-map" aria-label="Canvas minimap"><div id="canvas-map-cards"></div><div id="canvas-map-view"></div></div><div class="canvas-hint">Drag background to pan · Wheel to zoom · Shift-wheel to scroll · Double-click a stage to open</div>`;
 
@@ -159,6 +162,7 @@ export function createWorkflow(bridge) {
       ...$("#project-tab").querySelectorAll("button"),
       $("#motion-run"),
       $("#motion-save"),
+      $("#motion-video"),
     ];
     const inputs = [
       ...$("#project-form").querySelectorAll("input,textarea,select"),
@@ -177,6 +181,7 @@ export function createWorkflow(bridge) {
       buttons.forEach((b) => (b.disabled = false));
       inputs.forEach((input) => (input.disabled = false));
       $("#motion-save").disabled = !study || !motionSettingsMatch();
+      $("#motion-video").disabled = !study || !motionSettingsMatch();
     }
   }
   async function applyEnclosure(data) {
@@ -320,11 +325,16 @@ export function createWorkflow(bridge) {
   }
   function fitMotion() {
     if (!study || !camera || !group) return;
+    frameMotion(camera, controls);
+  }
+  function frameMotion(viewCamera, viewControls = null) {
     group.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(group);
-    if (study?.family === "general_mechanism") study.frames.forEach(frame => {
-      bounds.expandByPoint(new THREE.Vector3(...frame.bounds_mm[0]));
-      bounds.expandByPoint(new THREE.Vector3(...frame.bounds_mm[1]));
+    study.frames.forEach(frame => {
+      if (frame.bounds_mm) {
+        bounds.expandByPoint(new THREE.Vector3(...frame.bounds_mm[0]));
+        bounds.expandByPoint(new THREE.Vector3(...frame.bounds_mm[1]));
+      }
     });
     const center = bounds.getCenter(new THREE.Vector3());
     const direction = new THREE.Vector3(0.75, -0.95, 0.8).normalize();
@@ -332,7 +342,7 @@ export function createWorkflow(bridge) {
       .crossVectors(direction, new THREE.Vector3(0, 0, 1))
       .normalize();
     const up = new THREE.Vector3().crossVectors(right, direction).normalize();
-    const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const tan = Math.tan(THREE.MathUtils.degToRad(viewCamera.fov / 2));
     let distance = 1;
     for (const x of [bounds.min.x, bounds.max.x])
       for (const y of [bounds.min.y, bounds.max.y])
@@ -343,17 +353,18 @@ export function createWorkflow(bridge) {
             point.dot(direction) +
               Math.max(
                 Math.abs(point.dot(up)) / tan,
-                Math.abs(point.dot(right)) / (tan * camera.aspect),
+                Math.abs(point.dot(right)) / (tan * viewCamera.aspect),
               ),
           );
         }
     const size = bounds.getSize(new THREE.Vector3()).length();
-    controls.target.copy(center);
-    camera.position.copy(center).addScaledVector(direction, distance * 1.18);
-    camera.near = Math.max(0.05, size / 10000);
-    camera.far = Math.max(1000, size * 30);
-    camera.updateProjectionMatrix();
-    controls.update();
+    viewControls?.target.copy(center);
+    viewCamera.position.copy(center).addScaledVector(direction, distance * 1.18);
+    viewCamera.near = Math.max(0.05, size / 10000);
+    viewCamera.far = Math.max(1000, size * 30);
+    viewCamera.updateProjectionMatrix();
+    viewCamera.lookAt(center);
+    viewControls?.update();
   }
   function clearGroup() {
     if (!group) return;
@@ -421,6 +432,7 @@ export function createWorkflow(bridge) {
     $("#motion-angle").step = value.family === "general_mechanism" || value.family === "panel_hinges" ? "any" : ".1";
     $("#motion-angle").disabled = false;
     $("#motion-play").disabled = false;
+    $("#motion-video").disabled = false;
     $("#motion-save").disabled = value.family === "general_mechanism";
     $("#motion-state").textContent = value.family === "panel_hinges" || value.family === "general_mechanism"
       ? `${value.frames.length} sampled poses · ${value.passed ? "Geometry checks passed" : "Geometry issues detected"}`
@@ -515,6 +527,7 @@ export function createWorkflow(bridge) {
     input.addEventListener("change", () => {
       playing = false;
       $("#motion-save").disabled = true;
+      $("#motion-video").disabled = true;
       $("#motion-play").textContent = "▶ Play";
       $("#motion-state").textContent =
         "Motion settings changed. Run the study again to update results.";
@@ -536,6 +549,79 @@ export function createWorkflow(bridge) {
     updateAngle(0);
   };
   $("#motion-fit").onclick = fitMotion;
+  $("#motion-video").onclick = async () => {
+    if (videoExport) { videoExport.abort(); return; }
+    if (!study || studyKey !== motionSignature(snapshot) || !motionSettingsMatch()) {
+      bridge.toast("Run the motion study for the current geometry and settings first.", true);
+      return;
+    }
+    const checked = study, source = snapshot.id, priorAngle = angle;
+    const abort = new AbortController();
+    videoExport = abort;
+    playing = false;
+    $("#motion-play").textContent = "▶ Play";
+    const inputs = [...$("#motion-tab").querySelectorAll("button,input,select")]
+      .filter(input => input.id !== "motion-video");
+    const priorDisabled = inputs.map(input => input.disabled);
+    inputs.forEach(input => { input.disabled = true; });
+    controls.enabled = false;
+    let videoRenderer;
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1280; canvas.height = 720;
+      const ink = canvas.getContext("2d");
+      videoRenderer = new THREE.WebGLRenderer({antialias: true});
+      videoRenderer.setPixelRatio(1); videoRenderer.setSize(1280, 720, false);
+      const viewCamera = camera.clone();
+      viewCamera.aspect = 1280 / 720;
+      frameMotion(viewCamera);
+      const blob = await recordCanvasVideo(canvas, index => {
+        if (study !== checked || snapshot.id !== source || !motionSettingsMatch())
+          throw new Error("Design or study changed. Video discarded; run the current study again.");
+        const frame = checked.frames[index];
+        updateAngle(frame.progress_pct ?? frame.angle_deg);
+        videoRenderer.render(scene, viewCamera);
+        ink.drawImage(videoRenderer.domElement, 0, 0);
+        ink.fillStyle = "#172b32dd";
+        ink.fillRect(0, 0, 1280, 65); ink.fillRect(0, 655, 1280, 65);
+        ink.fillStyle = "#ffffff"; ink.font = "20px sans-serif";
+        ink.fillText(`FORMA · ${source} · ${checked.frames.length} checked poses`, 24, 28);
+        ink.font = "16px sans-serif";
+        const pose = frame.progress_pct != null ? `${num(frame.progress_pct)}%` : `${num(frame.angle_deg)}°`;
+        ink.fillText(`${pose} · ${frame.extent_mm.map(v => num(v)).join(" × ")} mm`, 24, 53);
+        const passed = checked.passed ?? checked.sampled_overlap_free;
+        ink.fillText(passed ? "Sampled native geometry checks passed" : "DIAGNOSTIC PREVIEW · sampled geometry issues", 24, 681);
+        ink.fillText("Prescribed motion · friction, forces, physical locks and print fit unverified", 24, 706);
+      }, videoFramePlan(checked.frames.length), {signal: abort.signal, onProgress: progress => {
+        $("#motion-video").textContent = `Cancel video · ${Math.round(progress * 100)}%`;
+      }});
+      if (abort.signal.aborted || study !== checked || snapshot.id !== source)
+        throw new DOMException("Video export cancelled.", "AbortError");
+      const url = URL.createObjectURL(blob), link = document.createElement("a");
+      link.href = url; link.download = `forma-motion-${source}.webm`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      bridge.toast("Motion video downloaded (.webm). No model call.");
+    } catch (error) {
+      bridge.toast(error.name === "AbortError" ? "Video export cancelled." : error.message, error.name !== "AbortError");
+    } finally {
+      videoRenderer?.dispose(); videoRenderer?.forceContextLoss();
+      controls.enabled = true;
+      videoExport = null;
+      $("#motion-video").textContent = "Download video";
+      inputs.forEach((input, index) => { if (input.isConnected) input.disabled = priorDisabled[index]; });
+      if (study === checked && snapshot.id === source) {
+        updateAngle(priorAngle);
+      } else {
+        // A new revision can have different controls and no valid motion;
+        // keep Fit/Reset usable while refusing stale playback/save.
+        $("#motion-play").disabled = !study;
+        $("#motion-angle").disabled = !study;
+        $("#motion-save").disabled = !study || study.family === "general_mechanism" || !motionSettingsMatch();
+      }
+      $("#motion-video").disabled = !study || studyKey !== motionSignature(snapshot) || !motionSettingsMatch();
+    }
+  };
   $("#motion-focus").onclick = () => {
     const focused = document.body.classList.toggle("motion-focus");
     $("#motion-focus").textContent = focused ? "Back to editors" : "Focus view";
@@ -560,11 +646,7 @@ export function createWorkflow(bridge) {
     });
 
   function motionSettingsMatch() {
-    return (
-      study &&
-      study.config.max_angle_deg === Number($("#motion-max").value) &&
-      study.config.samples === Number($("#motion-samples").value)
-    );
+    return motionSettingsCurrent(study, $("#motion-max").value, $("#motion-samples").value);
   }
 
   function renderCanvas() {
@@ -762,6 +844,9 @@ export function createWorkflow(bridge) {
         option.disabled=option.hidden=!value.folding;
       }
       if (!value.folding && Number(samplesControl.value)>73) samplesControl.value=37;
+      if (general) for (const option of samplesControl.options) {
+        option.disabled = (general.states.length - 1) * (Number(option.value) - 1) + 1 > 361;
+      }
       $("#motion-chart").setAttribute("aria-label","Outside envelope through sampled motion");
       if (!study) $("#motion-metrics").textContent="Simulation is bound to the current CAD revision.";
       $("#motion-angle").parentElement.firstChild.textContent=general ? "Path progress " : value.folding ? "Driver angle " : "Wall angle ";
@@ -817,6 +902,7 @@ export function createWorkflow(bridge) {
         binding === "current" || !value.document.features.length,
       );
       if (studyKey && studyKey !== motionSignature(value)) {
+        videoExport?.abort();
         $("#motion-states").classList.add("hidden");
         $("#motion-states").innerHTML = "";
         study = null;
@@ -825,6 +911,7 @@ export function createWorkflow(bridge) {
         $("#motion-state").textContent =
           "Geometry changed. Run the motion study for this revision.";
         $("#motion-play").disabled = true;
+        $("#motion-video").disabled = true;
         $("#motion-angle").disabled = true;
         $("#motion-save").disabled = true;
         $("#motion-chart").innerHTML = "";
@@ -834,6 +921,7 @@ export function createWorkflow(bridge) {
     },
     tabChanged(tab) {
       if (tab !== "motion") {
+        videoExport?.abort();
         document.body.classList.remove("motion-focus");
         $("#motion-focus").textContent = "Focus view";
       }

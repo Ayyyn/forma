@@ -54,6 +54,32 @@ def finish(ident):
 
 
 class DesignToolTests(unittest.TestCase):
+    def test_recorded_mechanism_reference_resolves_before_cache_and_never_crosses_candidates(self):
+        with tempfile.TemporaryDirectory(dir="output") as directory:
+            session = DesignSession(document(), "Diagnostic control", directory)
+            arguments = {"candidate_id": "base", "moving_part_ids": ["body_002"],
+                         "direction": [1, 0, 0], "max_distance_mm": 1, "samples": 3,
+                         "mechanism_spec": {}, "state_name": "end"}
+            missing = session.call("probe_translation", arguments)
+            self.assertFalse(missing["ok"])
+            self.assertTrue(session.call("check_motion", {"candidate_id": "base", "spec": specification(10)})["ok"])
+            first = session.call("probe_translation", arguments)
+            self.assertTrue(first["path_clear_at_samples"])
+            self.assertEqual(session.events[-1]["arguments"]["mechanism_spec"], {})
+            self.assertEqual(session.events[-1]["resolved_arguments"]["mechanism_spec"], specification(10))
+            self.assertEqual(session.call("probe_translation", arguments), first)
+            self.assertTrue(session.events[-1]["cache_hit"])
+            session.candidates["new-candidate"] = deepcopy(session.candidates["base"])
+            self.assertFalse(session.call("probe_translation", {**arguments, "candidate_id": "new-candidate"})["ok"])
+            # The same named state changes position: using an unresolved cache
+            # key would incorrectly return the prior clear path.
+            session.call("check_motion", {"candidate_id": "base", "spec": specification(20)})
+            changed = session.call("probe_translation", arguments)
+            self.assertFalse(session.events[-1]["cache_hit"])
+            self.assertFalse(changed["initial_pose_clear"])
+            session.reports["base"].pop("motion")
+            self.assertFalse(session.call("probe_translation", arguments)["ok"])
+
     def test_previous_component_manifest_cannot_hide_fresh_export_failure(self):
         with tempfile.TemporaryDirectory(dir="output") as directory:
             session = DesignSession({"name": "New", "features": []}, BRIEF, directory)

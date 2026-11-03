@@ -29,14 +29,15 @@ MODULES = (
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        subprocess.call(
-            [
-                sys.executable,
-                "-m",
-                "unittest",
-                *["tests." + name for name in MODULES],
-                "-v",
-            ]
-        )
+    result = subprocess.call(
+        [
+            sys.executable,
+            "-m",
+            "unittest",
+            *["tests." + name for name in MODULES],
+            "-v",
+        ]
     )
+    if result == 0:
+        result = subprocess.call(["node", "--test", "tests/test_motion_video.mjs"])
+    raise SystemExit(result)

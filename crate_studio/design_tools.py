@@ -321,7 +321,10 @@ def tool_definitions():
             "type": "function",
             "function": {
                 "name": name,
-                "description": description,
+                "description": description + (
+                    " Send mechanism_spec:{} to reuse this exact candidate's latest recorded check_motion spec; unavailable on a new/changed candidate until checked. This avoids repeating the complete mechanism in every diagnostic. Explicit specs remain supported."
+                    if "mechanism_spec" in schema.get("properties", {}) else ""
+                ),
                 "parameters": schema,
             },
         }
@@ -406,6 +409,7 @@ class DesignSession:
     def call(self, name, arguments):
         start = time.perf_counter()
         hit = False
+        requested_arguments = deepcopy(arguments)
         try:
             definitions = {
                 x["function"]["name"]: x["function"]["parameters"]
@@ -437,6 +441,11 @@ class DesignSession:
                 ):
                     self.reports.pop(referenced, None)
                 self.asset_keys[referenced] = deepcopy(assets)
+            if arguments.get("mechanism_spec") == {}:
+                recorded = self.reports.get(referenced, {}).get("motion", {}).get("spec")
+                if recorded is None:
+                    raise ValueError("Run check_motion on this exact candidate before using mechanism_spec:{}")
+                arguments = {**arguments, "mechanism_spec": deepcopy(recorded)}
             key = hashlib.sha256(
                 json.dumps(
                     [TOOL_VERSION, name, arguments, assets],
@@ -480,7 +489,8 @@ class DesignSession:
             }
         event = {
             "tool": name,
-            "arguments": deepcopy(arguments),
+            "arguments": requested_arguments,
+            "resolved_arguments": deepcopy(arguments),
             "result": deepcopy(result),
             "cache_hit": hit,
             "elapsed_s": time.perf_counter() - start,
@@ -1008,18 +1018,20 @@ class DesignSession:
         ):
             ax = fig.add_subplot(2, 2, i + 1, projection="3d", computed_zorder=False)
             ax.set_facecolor("#f7f5f0")
+            all_faces, face_colors = [], []
             for j, mesh in enumerate(built["mesh"]):
                 vertices = np.array(mesh["vertices"]).reshape(-1, 3)
                 faces = np.array(mesh["triangles"]).reshape(-1, 3)
-                ax.add_collection3d(
-                    Poly3DCollection(
-                        vertices[faces],
-                        facecolor=colors[j % len(colors)],
-                        edgecolor="#4b5a60",
-                        linewidth=0.15,
-                        alpha=1,
-                    )
+                all_faces.extend(vertices[faces])
+                face_colors.extend([colors[j % len(colors)]] * len(faces))
+            # Sort all faces together. Drawing one opaque collection per body
+            # in source order can paint a rear floor over a nearer wall/pin.
+            ax.add_collection3d(
+                Poly3DCollection(
+                    all_faces, facecolors=face_colors, zsort="average",
+                    edgecolor="#4b5a60", linewidth=0.15, alpha=1,
                 )
+            )
             for setter, value in zip((ax.set_xlim, ax.set_ylim, ax.set_zlim), center):
                 setter(value - half, value + half)
             ax.set_box_aspect((1, 1, 1))

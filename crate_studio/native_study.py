@@ -13,15 +13,25 @@ def study_identity(document, asset_loader=None):
     metadata = document.get("metadata", {})
     spec = metadata.get("design_mechanism")
     reports = metadata.get("design_review", {}).get("reports", {})
+    declared_targets = metadata.get("native_study_targets")
+    if declared_targets is not None and (
+        not isinstance(declared_targets, dict)
+        or not isinstance(declared_targets.get("states"), dict)
+    ):
+        raise ValueError("Explicit native study targets require a states mapping")
     if not isinstance(spec, dict) or not spec.get("states"):
         raise ValueError("A retained named mechanism study is required")
     targets = {}
     for state in spec["states"]:
         name = state["name"]
-        row = reports.get("floor:state:" + name)
-        if not isinstance(row, dict):
+        if declared_targets is not None:
+            footprint = declared_targets["states"].get(name)
+        else:
+            row = reports.get("floor:state:" + name)
+            footprint = row.get("footprint") if isinstance(row, dict) else None
+        if not isinstance(footprint, dict):
             raise ValueError("Missing retained floor target for state: " + name)
-        targets[name] = footprint_spec(row["footprint"])
+        targets[name] = footprint_spec(footprint)
     encoded = json.dumps(
         [review_identity(document, asset_loader), targets],
         sort_keys=True,

@@ -41,6 +41,25 @@ def fixture():
 
 
 class NativeStudyTests(unittest.TestCase):
+    def test_explicit_targets_for_new_state_names_preserve_original_model_review(self):
+        doc = fixture()
+        original = deepcopy(doc["metadata"]["design_review"])
+        targets = {name: deepcopy(original["reports"]["floor:state:" + name]["footprint"])
+                   for name in ("start", "end")}
+        doc["metadata"]["design_mechanism"]["states"][0]["name"] = "start_locked"
+        doc["metadata"]["native_study_targets"] = {
+            "actor": "human_review", "states": {"start_locked": targets["start"], "end": targets["end"]}}
+        with tempfile.TemporaryDirectory(dir="output") as root:
+            checked, report = recheck(doc, Path(root))
+        self.assertTrue(report["passed"])
+        self.assertEqual(checked["metadata"]["design_review"], original)
+        self.assertEqual(native_review_state(checked)["status"], "current")
+        checked["metadata"]["native_study_targets"]["states"]["end"]["size_mm"][0] += 1
+        self.assertEqual(native_review_state(checked)["status"], "stale")
+        del doc["metadata"]["native_study_targets"]["states"]["end"]
+        with self.assertRaisesRegex(ValueError, "Missing retained"):
+            study_identity(doc)
+
     def test_native_recheck_has_no_model_calls_and_does_not_claim_visual_approval(self):
         original = fixture()
         with tempfile.TemporaryDirectory(dir="output") as root, patch.object(
