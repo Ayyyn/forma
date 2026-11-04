@@ -145,6 +145,7 @@
                   ↖ Select</button
                 ><button data-sketch-tool="rectangle">▱ Rectangle</button
                 ><button data-sketch-tool="circle">○ Circle</button>
+                <button id="sketch-delete" class="danger" disabled title="Delete selected sketch (Delete or Backspace)">Delete sketch</button>
               </div>
               <label
                 ><input id="snap-enabled" type="checkbox" checked /> Snap</label
@@ -160,6 +161,7 @@
             <div id="sketch-surface">
               <canvas
                 id="sketch-canvas"
+                tabindex="0"
                 aria-label="Click and drag to draw a sketch"
               ></canvas>
               <div id="annotation-layer"></div>

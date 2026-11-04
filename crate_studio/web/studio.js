@@ -5,6 +5,7 @@ import { drawingSections } from "/assets/drawing_sections.js";
 import { drawingRequest } from "/assets/drawing_request.js";
 import { displayChecks } from "/assets/review_display.mjs";
 import { referenceSegments, savedSketchCount } from "/assets/sketch_reference.mjs";
+import { selectedSketch, sketchKeyCommand } from "/assets/sketch_actions.mjs";
 let sectionUI;
 let sketchReferenceKey = null, sketchReferenceLines = [], sketchFitKey = null;
 let workflow;
@@ -365,6 +366,7 @@ function setBusy(b) {
   $$(
     ".operation-tools button,#save-document,#import-document,#new-document,#undo,#redo,#update-feature,#native-study-recheck",
   ).forEach((el) => (el.disabled = b));
+  $("#sketch-delete").disabled=b || !selectedSketch(state.document,state.feature);
   if (!b) updateHistoryButtons();
 }
 
@@ -732,6 +734,7 @@ async function commitDocument(label = "Design revision") {
 async function deleteFeature(id) {
   if (state.busy) return;
   const f = state.document.features.find((x) => x.id === id);
+  if (!f) return;
   state.document.features = state.document.features.filter((x) => x.id !== id);
   state.feature = null;
   await commitDocument(`Delete ${f?.name || "feature"}`);
@@ -954,6 +957,7 @@ function selectFeature(id) {
   state.feature = id;
   renderTree();
   renderInspector();
+  drawSketch();
   $("#selection-message").textContent =
     state.document.features.find((f) => f.id === id)?.name ||
     "Nothing selected";
@@ -1479,6 +1483,7 @@ function resizeSketch() {
 }
 
 function drawSketch() {
+  $("#sketch-delete").disabled=state.busy || !selectedSketch(state.document,state.feature);
   const canvas = $("#sketch-canvas");
   if (!canvas.width) return;
   const ctx = canvas.getContext("2d");
@@ -1537,9 +1542,9 @@ function drawSketch() {
     ctx.stroke();
   }
   $("#sketch-help").textContent = folding ? "Nominal hinge map; edit the folding feature. Physical outlines are in Drawing." :
-    state.sketchTool!=="select" ? `Drag to draw a ${state.sketchTool}. Creates an editable profile with a 10 mm extrusion.` :
+    state.sketchTool!=="select" ? `Drag to draw a ${state.sketchTool}. Esc returns to Select.` :
     !count && state.document?.features?.length ? "Solid features define this model. Reference edges are not editable sketches; edit solids in Model or draw a new profile." :
-    count ? "Select a profile to edit it. Middle-drag or Alt-drag to pan." : "Choose Rectangle or Circle to create an editable sketch.";
+    count ? "Select a profile to edit it. Delete or Backspace removes it. Esc exits drawing. Middle-drag or Alt-drag to pan." : "Choose Rectangle or Circle to create an editable sketch.";
   for (const f of state.document?.features || []) {
     if (f.type === "sketch_extrude" && !f.suppressed)
       drawProfile(ctx, f.params, f.id === state.feature);
@@ -1621,6 +1626,7 @@ function setSketchTool(tool) {
 const canvas = $("#sketch-canvas");
 canvas.addEventListener("pointerdown", (e) => {
   if (state.busy) return;
+  canvas.focus({preventScroll:true});
   const r = canvas.getBoundingClientRect(),
     local = [e.clientX - r.left, e.clientY - r.top],
     world = screenToSketch(...local);
@@ -1638,10 +1644,7 @@ canvas.addEventListener("pointerdown", (e) => {
       const graph=state.snapshot.folding?.graph;
       return graph?.faces.some(face=>profileContains({shape:"polyline",points:face.map(i=>graph.vertices[i])},...world));
     });
-    if (hit) {
-      selectFeature(hit.id);
-      drawSketch();
-    }
+    selectFeature(hit?.id || null);
     return;
   }
   drawDrag = { tool: state.sketchTool, start: world, end: world };
@@ -2490,14 +2493,31 @@ function fitSketch() {
 }
 $("#sketch-fit").addEventListener("click", fitSketch);
 $("#sketch-reference").addEventListener("change", drawSketch);
+$("#sketch-delete").addEventListener("click",()=>{
+  const selected=selectedSketch(state.document,state.feature);
+  if (selected) deleteFeature(selected.id);
+});
 $("#snap-step").addEventListener("change", drawSketch);
 document.addEventListener("keydown", (e) => {
-  const text = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
+  const text = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !text) {
     e.preventDefault();
     undoRedo(e.shiftKey ? "redo" : "undo");
   }
   if (text) return;
+  const sketchCommand=sketchKeyCommand(e.key,state.tab,selectedSketch(state.document,state.feature));
+  if (sketchCommand==="select") {
+    e.preventDefault();
+    drawDrag=null;
+    setSketchTool("select");
+    canvas.focus({preventScroll:true});
+    return;
+  }
+  if (sketchCommand==="delete") {
+    e.preventDefault();
+    deleteFeature(state.feature);
+    return;
+  }
   if (e.key.toLowerCase() === "f") {
     if (state.tab === "canvas") workflow.fitCanvas();
     else fitView();
@@ -2511,7 +2531,10 @@ document.addEventListener("keydown", (e) => {
     highlightSelection();
     renderInspector();
   }
-  if (e.key === "Delete" && state.feature) deleteFeature(state.feature);
+  if (e.key === "Delete" && state.feature && state.tab!=="sketch") {
+    e.preventDefault();
+    deleteFeature(state.feature);
+  }
 });
 window.addEventListener("resize", () => {
   if (innerWidth > 1050) closeDrawers();

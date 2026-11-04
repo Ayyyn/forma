@@ -764,11 +764,14 @@ input[type="checkbox"] {
   border-bottom: 1px solid var(--line);
   font-size: 9px;
   color: #92a0b4;
+  overflow-x: auto;
+  flex-shrink: 0;
 }
 .sketch-tools {
   display: flex;
   gap: 2px;
   margin-right: auto;
+  flex-shrink: 0;
 }
 .sketch-toolbar button {
   font-size: 9px;
@@ -780,6 +783,7 @@ input[type="checkbox"] {
   background: #eaf0fc;
   color: #6b83bc;
 }
+.sketch-toolbar button.danger { color: #a43343; white-space: nowrap; }
 .sketch-toolbar label {
   display: flex;
   gap: 4px;
