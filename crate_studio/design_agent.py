@@ -65,17 +65,20 @@ def propose_design(
                 + "\n"
             )
 
+    context = {
+        "original_instruction": prompt,
+        "selection": selection_context or {},
+        "project": wa._model_document(base_doc),
+        "max_model_turns": max_turns,
+    }
+    # Full local source context is independent of the compact wire projection.
+    log({"kind": "design_context", "context": context, "budget_charge_usd": 0})
     messages = [
         {"role": "system", "content": SYSTEM},
         {
             "role": "user",
             "content": json.dumps(
-                {
-                    "original_instruction": prompt,
-                    "selection": selection_context or {},
-                    "project": wa._model_document(base_doc),
-                    "max_model_turns": max_turns,
-                },
+                context,
                 ensure_ascii=False,
                 allow_nan=False,
             ),
@@ -153,7 +156,7 @@ def propose_design(
                 )
             payload = {
                 "model": wa.MODEL,
-                "messages": staged_messages,
+                "messages": wa.planning_messages(staged_messages),
                 "tools": tools,
                 "tool_choice": "auto",
                 "max_tokens": token_limit,

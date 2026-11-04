@@ -1,6 +1,7 @@
 """Persistent, human-editable feature documents. Only declarative CAD operations."""
 
 from copy import deepcopy
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from functools import lru_cache
 from importlib.metadata import version as package_version
@@ -344,8 +345,18 @@ def projected(encoded):
 
 def snapshot(document, cad_lock, drawing_context=None, include_drawing=True):
     doc = normalize_document(document)
-    with cad_lock:
-        result = built(build_key(doc))
+    from .workspace_cache import lookup_build
+
+    existing = (
+        lookup_build(json.loads(build_key(doc)), asset_path)
+        if not include_drawing
+        else None
+    )
+    # Cached geometry is immutable. A new label/section revision can copy its
+    # already-checked mesh/metrics without waiting behind an unrelated sweep.
+    # Cold builds and every native projection still acquire the CAD lock.
+    with cad_lock if existing is None else nullcontext():
+        result = existing if existing is not None else built(build_key(doc))
         statuses = result["features"]
         empty = not doc["features"] or all(
             f.get("suppressed", False) for f in doc["features"]
@@ -1579,7 +1590,19 @@ def create_router(cad_lock, crate_reader=None):
                     workflow["panel_pack"] = export_panel_pack(
                         value["document"], folder
                     )
-                if any(
+                if value["document"]["metadata"].get("design_mechanism"):
+                    # Geometry export is not an implicit request to rerun an
+                    # arbitrarily long mechanism analysis. Retained, source-bound
+                    # study/review status remains in the same workflow report.
+                    # The print-release route still reruns all required studies.
+                    workflow["motion"] = {
+                        "status": "not_rechecked_at_export",
+                        "declared_spec": value["document"]["metadata"][
+                            "design_mechanism"
+                        ],
+                        "scope": "Native STEP/STL and drawing geometry are verified during export. Motion is a separate study; run Motion or Recheck native study for current collision evidence. Retained native-study and design-review status are reported above.",
+                    }
+                elif any(
                     key in value["document"]["metadata"]
                     for key in ("motion", "design_mechanism")
                 ):

@@ -13,6 +13,41 @@ from crate_studio.workspace_drawing import drawing_data, export_drawings
 
 
 class SectionTests(unittest.TestCase):
+    def test_section_end_labels_have_a_separate_lane_from_height_dimensions(self):
+        from crate_studio.workspace_drawing import _scene
+        from reportlab.pdfbase import pdfmetrics
+
+        doc = {
+            "name": "Cut at mid-height",
+            "features": [],
+            "metadata": {
+                "drawing_layout": "aligned-v1",
+                "drawing_sections": [
+                    {"name": "Mid-plane", "axis": "Z", "offset_mm": 2}
+                ],
+            },
+        }
+        data = drawing_data(doc, self.parts())
+        scene = _scene(data)
+        for key in ("front", "right"):
+            labels = [
+                item
+                for item in scene
+                if item.get("role") == "section-label" and item.get("view") == key
+            ]
+            dimension = next(
+                item
+                for item in scene
+                if item.get("role") == "native-dimension-label"
+                and item.get("view") == key
+            )
+            right_edge = max(
+                label["x"]
+                + pdfmetrics.stringWidth(label["text"], "FormaSans", label["size"])
+                for label in labels
+            )
+            self.assertGreater(dimension["x"] - 11, right_edge + 8)
+
     def test_saved_revision_and_edited_plane_do_not_share_a_false_revision_label(self):
         from crate_studio import workspace_server as ws
         from copy import deepcopy

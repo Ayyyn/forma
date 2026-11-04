@@ -39,20 +39,39 @@ def asset_identity(document, loader):
     ]
 
 
+def _build_identity(document, asset_loader):
+    assets = asset_identity(document, asset_loader)
+    return json.dumps(
+        [
+            VERSION,
+            document["features"],
+            document.get("metadata", {}).get("gear_targets", []),
+            assets,
+        ],
+        sort_keys=True,
+        allow_nan=False,
+    )
+
+
+def lookup_build(document, asset_loader=None):
+    """Read an immutable owned build without starting any native operation."""
+    global _hits
+    try:
+        key = _build_identity(document, asset_loader)
+    except (ValueError, TypeError, KeyError, OSError):
+        return None
+    with _lock:
+        result = _values.get(key)
+        if result is not None:
+            _hits += 1
+            _values.move_to_end(key)
+        return result
+
+
 def cached_build(document, asset_loader=None):
     global _hits, _misses
     try:
-        assets = asset_identity(document, asset_loader)
-        key = json.dumps(
-            [
-                VERSION,
-                document["features"],
-                document.get("metadata", {}).get("gear_targets", []),
-                assets,
-            ],
-            sort_keys=True,
-            allow_nan=False,
-        )
+        key = _build_identity(document, asset_loader)
     except (ValueError, TypeError, KeyError, OSError):
         return build_document(document, asset_loader)
     with _lock:

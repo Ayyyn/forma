@@ -74,4 +74,8 @@ New drawings use aligned third-angle top/front/right views with shared calibrate
 
 Saved-revision payloads use bounded exact process-local reuse, including actual imported asset byte identities. Warm history reads bypass the native worker lock. Cold geometry edits and new native studies still require the CAD worker; a request timeout does not guarantee that server-side work stopped.
 
+Geometry-only snapshots for a new label or section revision can also reuse an already owned, checked native build while an unrelated study is running. New or changed solids and imported asset bytes still require native work; vector projections remain serialized.
+
 Studio loads checked 3D geometry before computing vector drawings. Drawing, Canvas and the live draft's Drawing view request exact native projections when needed; stale source, package or imported-asset responses cannot replace the current view. Export and engineering verification still generate full native drawings. Revision labels and notes reuse owned projection curves without reusing stale sheet text. A normal save validates and persists in one request.
+
+Ordinary geometry exports verify STEP/STL readback and native drawings without starting a new general mechanism analysis. Their workflow report retains source-bound review status and explicitly labels motion as not rechecked during export. Use Motion or Recheck native study for current collision evidence. Print & assembly pack retains its mandatory assembly, capture and lock/end-stop release checks. Wheel scrolling over numeric inspector fields does not change dimensions.

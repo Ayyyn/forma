@@ -36,6 +36,16 @@ def retained_context(source_id, depth=0):
         json.loads(line)
         for line in (folder / "events.jsonl").read_text(encoding="utf-8").splitlines()
     ]
+    local = next(
+        (
+            event.get("context")
+            for event in events
+            if event.get("kind") == "design_context"
+        ),
+        None,
+    )
+    if local is not None:
+        return local
     for event in events:
         if event.get("kind") != "reservation":
             continue
@@ -86,16 +96,7 @@ def restore(session, source_id, selection, log, depth=0, on_event=None):
                 },
             )
         raise ValueError("Checkpoint has no retained model request")
-    first = requests[0]["request"]["messages"]
-    context = json.loads(
-        next(
-            m["content"]
-            for m in first
-            if m["role"] == "user"
-            and isinstance(m["content"], str)
-            and '"original_instruction"' in m["content"]
-        )
-    )
+    context = retained_context(source_id, depth)
 
     def clean_selection(value):
         return {k: v for k, v in (value or {}).items() if v not in (None, [], {})}

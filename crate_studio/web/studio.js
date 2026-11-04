@@ -6,6 +6,12 @@ import { drawingRequest } from "/assets/drawing_request.js";
 let sectionUI;
 let workflow;
 let liveSequence = 0, liveLatest = null;
+// Scrolling a long inspector must never silently change a CAD dimension.
+document.addEventListener('wheel', event => {
+  if (event.target instanceof HTMLInputElement && event.target.type === 'number') {
+    event.preventDefault();
+  }
+}, {capture:true, passive:false});
 function showLiveDesign() {
   if (liveLatest) $("#live-design-frame").contentWindow?.postMessage({type:"forma-preview", ...liveLatest}, location.origin);
   if (!$("#live-design-dialog").open) $("#live-design-dialog").showModal();

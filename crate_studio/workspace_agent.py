@@ -467,6 +467,86 @@ def _model_document(value):
     return value
 
 
+def planning_messages(messages):
+    """Project historical evidence on the wire; preserve source and raw receipts.
+
+    Features, targets and all other metadata remain exact. Historical reports
+    stay queryable through inspect_retained_report rather than being duplicated
+    in every project inspection and continuation.
+    """
+    from copy import deepcopy
+
+    result = deepcopy(messages)
+    seen_documents = {}
+    for message_index, message in enumerate(result):
+        content = message.get("content")
+        if message.get("role") not in ("user", "tool") or not isinstance(content, str):
+            continue
+        try:
+            value = json.loads(content)
+        except ValueError:
+            continue
+        if not isinstance(value, dict):
+            continue
+        field = "project" if "original_instruction" in value else "document"
+        document = value.get(field)
+        if not isinstance(document, dict) or not isinstance(
+            document.get("features"), list
+        ):
+            continue
+        for kind in ("design_review", "native_study_review"):
+            review = document.get("metadata", {}).get(kind)
+            if not isinstance(review, dict) or not isinstance(
+                review.get("reports"), dict
+            ):
+                continue
+            reports = review["reports"]
+            # Already projected histories must remain byte-equivalent on retry.
+            if reports.get("storage") == "retained_native_evidence":
+                continue
+            review["reports"] = {
+                "storage": "retained_native_evidence",
+                "sha256": hashlib.sha256(
+                    json.dumps(reports, sort_keys=True, allow_nan=False).encode()
+                ).hexdigest(),
+                "index": [
+                    {
+                        "key": key,
+                        **{
+                            k: report[k]
+                            for k in (
+                                "passed",
+                                "physical_validation",
+                                "scope",
+                                "artifact",
+                                "evidence",
+                            )
+                            if k in report
+                        },
+                    }
+                    if isinstance(report, dict)
+                    else {"key": key}
+                    for key, report in reports.items()
+                ],
+                "retrieval": "inspect_retained_report(candidate_id, review_kind, report_key) returns the exact original report. These historical reports are not fresh proof for a changed source.",
+            }
+        identity = hashlib.sha256(
+            json.dumps(document, sort_keys=True, allow_nan=False).encode()
+        ).hexdigest()
+        if identity in seen_documents:
+            value[field] = {
+                "document_reference": {
+                    **seen_documents[identity],
+                    "sha256": identity,
+                    "scope": "Exact duplicate of the editable source already supplied in this conversation; no fields or dimensions differ.",
+                }
+            }
+        else:
+            seen_documents[identity] = {"message_index": message_index, "field": field}
+        message["content"] = json.dumps(value, ensure_ascii=False, allow_nan=False)
+    return result
+
+
 def paid_chat(payload, log, attempt, timeout=120):
     """One receipted chat request shared by bounded and tool-driven planners."""
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()

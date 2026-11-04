@@ -56,4 +56,6 @@ Studio bounds a design batch to 20 model turns and 16 tool calls per response. C
 
 The Studio tools profile starts with a 16,384-token response allowance and permits one bounded output-limit retry up to 32,768 tokens. Programmatic callers can select a smaller explicit policy; changing that policy is not a new model or a benchmark improvement by itself.
 
+The tool planner supplies editable geometry, constraints and targets in full, references exact duplicate source documents, and indexes historical native reports instead of repeating their complete payloads. `inspect_retained_report` retrieves an exact original report on request; it cannot promote old evidence. Full source context remains local for strict checkpoint validation, separately from the transmitted request receipt. New checks, failure diagnostics and acceptance gates remain explicit. Response deadlines are bounded to 600 seconds for the largest profile.
+
 Offline regression: `research/vendor/cad-runtime/Scripts/python.exe -m research.run_forma_checks`. The manifest covers Forma and excludes the separately scoped earlier research apps. Paid development checks use `research.verify_design_agent` only with an explicit `--run-paid` flag; original failures, source snapshots and continuation provenance remain local.

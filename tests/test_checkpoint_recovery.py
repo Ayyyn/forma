@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 import tempfile
 import threading
@@ -12,6 +13,11 @@ class CheckpointRecoveryTests(unittest.TestCase):
     def test_reopens_only_matching_retained_context_without_model_calls(self):
         doc = {
             "name": "Recovery control",
+            "metadata": {
+                "design_review": {
+                    "reports": {"old": {"passed": False, "frames": list(range(100))}}
+                }
+            },
             "features": [
                 {
                     "id": "box",
@@ -58,8 +64,15 @@ class CheckpointRecoveryTests(unittest.TestCase):
                         "messages": [{"role": "user", "content": json.dumps(context)}]
                     },
                 }
+                event["request"]["messages"] = wa.planning_messages(
+                    event["request"]["messages"]
+                )
                 (folder / "events.jsonl").write_text(
-                    json.dumps(event) + "\n", encoding="utf-8"
+                    json.dumps({"kind": "design_context", "context": context})
+                    + "\n"
+                    + json.dumps(event)
+                    + "\n",
+                    encoding="utf-8",
                 )
 
             write_context()
@@ -100,6 +113,16 @@ class CheckpointRecoveryTests(unittest.TestCase):
             child = ws.save_document(changed, lock, saved["id"], include_drawing=False)
             with self.assertRaises(HTTPException) as error:
                 endpoint("retained-control", child["id"])
+            self.assertEqual(error.exception.status_code, 409)
+            changed_report = deepcopy(saved["document"])
+            changed_report["metadata"]["design_review"]["reports"]["old"]["frames"][
+                0
+            ] = 999
+            report_child = ws.save_document(
+                changed_report, lock, saved["id"], include_drawing=False
+            )
+            with self.assertRaises(HTTPException) as error:
+                endpoint("retained-control", report_child["id"])
             self.assertEqual(error.exception.status_code, 409)
             context["selection"]["topology_ids"] = ["face-1"]
             write_context()

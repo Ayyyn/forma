@@ -16,6 +16,70 @@ from tests.test_workspace_agent import base, plan, response
 
 
 class ExactReuseTests(unittest.TestCase):
+    def test_new_metadata_revision_reuses_owned_geometry_without_entering_native_worker(
+        self,
+    ):
+        from crate_studio import workspace_server as ws
+
+        class NativeBusy:
+            def __enter__(self):
+                raise AssertionError("Native worker entered")
+
+            def __exit__(self, *args):
+                return False
+
+        gc.cache_clear()
+        doc = ws.normalize_document(
+            {
+                "name": "Original",
+                "features": [
+                    {
+                        "id": "box",
+                        "type": "box",
+                        "params": {"width": 10, "depth": 20, "height": 30},
+                    }
+                ],
+            }
+        )
+        initial = ws.snapshot(doc, threading.RLock(), include_drawing=False)
+        changed = deepcopy(doc)
+        changed["name"] = "Edited label"
+        changed["metadata"]["drawing_sections"] = [
+            {"name": "Native section", "axis": "Z", "offset_mm": 15}
+        ]
+        with patch.object(
+            ws, "built", side_effect=AssertionError("Must reuse immutable geometry")
+        ):
+            edited = ws.snapshot(changed, NativeBusy(), include_drawing=False)
+        self.assertEqual(edited["metrics"], initial["metrics"])
+        self.assertEqual(edited["document"], ws.normalize_document(changed))
+        self.assertTrue(edited["drawing_pending"])
+        changed["features"][0]["params"]["width"] = 11
+        with self.assertRaisesRegex(AssertionError, "Native worker entered"):
+            ws.snapshot(changed, NativeBusy(), include_drawing=False)
+
+        with tempfile.TemporaryDirectory(dir="output") as folder:
+            asset = Path(folder) / "same.step"
+            imported = ws.normalize_document(
+                {
+                    "name": "Asset",
+                    "features": [
+                        {
+                            "id": "external",
+                            "type": "import_step",
+                            "params": {"asset_id": "a" * 64},
+                        }
+                    ],
+                }
+            )
+            with patch.object(ws, "asset_path", return_value=asset):
+                cq.exporters.export(cq.Workplane("XY").box(8, 4, 2), str(asset))
+                ws.snapshot(imported, threading.RLock(), include_drawing=False)
+                ws.snapshot(imported, NativeBusy(), include_drawing=False)
+                cq.exporters.export(cq.Workplane("XY").box(12, 4, 2), str(asset))
+                with self.assertRaisesRegex(AssertionError, "Native worker entered"):
+                    ws.snapshot(imported, NativeBusy(), include_drawing=False)
+
     def test_saved_revision_snapshot_is_exact_copied_and_asset_bound(self):
         from crate_studio import workspace_server as ws
 

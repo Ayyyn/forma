@@ -288,6 +288,20 @@ def tool_definitions():
             _object(_CID),
         ),
         (
+            "inspect_retained_report",
+            "Read one exact historical native report omitted from repeated project context. This does not rerun or promote the old check. Use inspect_project for its retained report index.",
+            _object(
+                {
+                    **_CID,
+                    "review_kind": {
+                        "type": "string",
+                        "enum": ["design_review", "native_study_review"],
+                    },
+                    "report_key": _STRING,
+                }
+            ),
+        ),
+        (
             "feature_reference",
             "Get exact Studio feature/operation conventions and supported parameters. No executable code or invented operations are accepted.",
             _object({}),
@@ -971,6 +985,24 @@ class DesignSession:
                 "document": wa._model_document(doc),
                 "geometry": wa._public_result(built),
                 "parts": self._metrics(built),
+            }
+        if name == "inspect_retained_report":
+            if a["review_kind"] not in ("design_review", "native_study_review"):
+                raise ValueError("Unknown retained review kind")
+            report = (
+                doc.get("metadata", {})
+                .get(a["review_kind"], {})
+                .get("reports", {})
+                .get(a["report_key"])
+            )
+            if report is None:
+                raise ValueError("Unknown retained report key")
+            return {
+                "candidate_id": ident,
+                "review_kind": a["review_kind"],
+                "report_key": a["report_key"],
+                "historical_only": True,
+                "report": wa._model_document(deepcopy(report)),
             }
         if name == "inspect_topology":
             if a["part_id"] not in {p["id"] for p in built["parts"]}:

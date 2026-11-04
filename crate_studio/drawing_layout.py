@@ -77,7 +77,15 @@ def aligned_scene(data):
                 )
         width, height = view["width_mm"] * scale, view["height_mm"] * scale
         yy = y + height + 28
-        xx = x + width + 28
+        # Horizontal cutting-plane flags have their own lane outside the part.
+        # Reserve it before placing the rotated envelope dimension farther out.
+        axes = {"front": (0, 2), "top": (0, 1), "right": (1, 2)}[key]
+        horizontal_cut = any(
+            "XYZ".index(spec["axis"]) == axes[1]
+            and view["bounds_mm"][1] <= spec["offset_mm"] <= view["bounds_mm"][3]
+            for spec in data.get("section_specs", [])
+        )
+        xx = x + width + (58 if horizontal_cut else 28)
         for endpoint in (x, x + width):
             line(
                 [[endpoint, y + height + 3], [endpoint, yy + 5]],
@@ -113,7 +121,15 @@ def aligned_scene(data):
         arrow(xx, y + height, 0, -1)
         label = f"{view['axis_names'][1]} {view['height_mm']:.6g}"
         extent = pdfmetrics.stringWidth(label, "FormaSans", 10.5)
-        text(xx - 5, y + height / 2 + extent / 2, label, 10.5, rotation=-90)
+        text(
+            xx - 5,
+            y + height / 2 + extent / 2,
+            label,
+            10.5,
+            rotation=-90,
+            role="native-dimension-label",
+            view=key,
+        )
     for index, spec in enumerate(data.get("section_specs", [])):
         axis = "XYZ".index(spec["axis"])
         tag = chr(65 + index) + "-" + chr(65 + index)
@@ -143,8 +159,8 @@ def aligned_scene(data):
                 points = [[x - 12, yy], [x + w + 12, yy]]
                 for xx in (x - 12, x + w + 12):
                     arrow(xx, yy, 0, direction)
-                text(x - 24, yy - 8, tag, 8)
-                text(x + w + 15, yy - 8, tag, 8)
+                text(x - 24, yy - 8, tag, 8, role="section-label", view=key)
+                text(x + w + 15, yy - 8, tag, 8, role="section-label", view=key)
             line(points, width=1.1, hidden=True, role="cutting-plane")
     iso = data.get("isometric")
     if iso:
