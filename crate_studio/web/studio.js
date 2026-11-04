@@ -10,11 +10,13 @@ import { pivotTranslation } from "/assets/manual_geometry.mjs";
 import { conversationUI } from "/assets/conversation.js";
 import {viewportTools} from '/assets/viewport_tools.js';
 import {viewportInspection} from '/assets/viewport_inspection.js';
+import {modelPlacement} from '/assets/model_placement.js';
+import {nativeBodyPivot} from '/assets/placement_math.mjs';
 let chatUI, pointAction=null, pickedHole=null, placementSelection=null;
 let modelViewFitted=false;
 let modelViewportTools;
-let modelInspection;
-function cancelDirectDrag(){modelViewportTools?.cancel();}
+let modelInspection, placementTool;
+function cancelDirectDrag(){placementTool?.cancel();modelViewportTools?.cancel();}
 let sectionUI;
 let sketchReferenceKey = null, sketchReferenceLines = [], sketchFitKey = null;
 let workflow;
@@ -93,8 +95,6 @@ let THREE,
   annotationDrag = null,
   gizmo,
   gizmoPivot,
-  gizmoStart,
-  gizmoBody,
   gizmoDragging = false;
 
 const sketch = { scale: 3, cx: 0, cy: 0, width: 0, height: 0 };
@@ -491,7 +491,7 @@ function renderInspector() {
   let selected = "";
   if (state.selection.length) {
     const picked = state.selection[state.selection.length - 1];
-    selected = `<div class="selected-geometry"><div class="section-title">SELECTED ${picked.kind === "body" ? "COMPONENT" : picked.kind === "edge" ? "EDGE" : "FACE"} <button id="clear-selection" title="Clear selection">×</button></div><p>${esc(picked.part_id || "Body")} · ${esc(picked.id)}</p>${picked.area_mm2 != null ? `<p>Area <strong>${fmt(picked.area_mm2)} mm²</strong></p>` : ""}${picked.length_mm != null ? `<p>Length <strong>${fmt(picked.length_mm)} mm</strong></p>` : ""}${picked.kind === "edge" ? '<button id="fillet-selected" class="small-button">Fillet edge</button><button id="chamfer-selected" class="small-button">Chamfer edge</button>' : ""}<button id="hide-selected" class="small-button">Hide body</button>${gizmo ? '<button id="translate-selected" class="small-button">Move body ✥</button>' : ""}<p class="parameter-note">${picked.kind === "body" ? "Drag this component to move it; use Dimensions to edit its features." : picked.kind === "edge" ? "Ctrl-click another edge on this body for a shared edit. Measure reports exact selected-edge distance." : "Ctrl-click a second planar face on another body to align."}</p>${canMate() ? '<button id="align-selected" class="small-button">Align these faces</button>' : ""}${acceptedTypes().includes("face_offset") && String(picked.geom_type || picked.type).toUpperCase() === "PLANE" ? '<div class="push-pull-row"><label>Offset · mm<input id="face-offset-distance" type="number" value="5" step="any"></label><button id="push-pull-face">Push / pull ↥</button></div><p class="parameter-note">Positive outward, negative inward. Creates an editable solid operation.</p>' : ""}</div>`;
+    selected = `<div class="selected-geometry"><div class="section-title">SELECTED ${picked.kind === "body" ? "COMPONENT" : picked.kind === "edge" ? "EDGE" : "FACE"} <button id="clear-selection" title="Clear selection">×</button></div><p>${esc(picked.part_id || "Body")} · ${esc(picked.id)}</p>${picked.area_mm2 != null ? `<p>Area <strong>${fmt(picked.area_mm2)} mm²</strong></p>` : ""}${picked.length_mm != null ? `<p>Length <strong>${fmt(picked.length_mm)} mm</strong></p>` : ""}${picked.kind === "edge" ? '<button id="fillet-selected" class="small-button">Fillet edge</button><button id="chamfer-selected" class="small-button">Chamfer edge</button>' : ""}<button id="hide-selected" class="small-button">Hide body</button>${gizmo ? '<button id="translate-selected" class="small-button">Move body ✥</button>' : ""}<p class="parameter-note">${picked.kind === "body" ? "Use Move for constrained placement; click a blue dimension to resize its feature." : picked.kind === "edge" ? "Ctrl-click another edge on this body for a shared edit. Measure reports exact selected-edge distance." : "Ctrl-click a second planar face on another body to align."}</p>${canMate() ? '<button id="align-selected" class="small-button">Align these faces</button>' : ""}${acceptedTypes().includes("face_offset") && String(picked.geom_type || picked.type).toUpperCase() === "PLANE" ? '<div class="push-pull-row"><label>Offset · mm<input id="face-offset-distance" type="number" value="5" step="any"></label><button id="push-pull-face">Push / pull ↥</button></div><p class="parameter-note">Positive outward, negative inward. Creates an editable solid operation.</p>' : ""}</div>`;
   }
 
   if (!f) {
@@ -674,6 +674,7 @@ async function updateFeature() {
 }
 
 async function addFeature(type, override) {
+  if(placementTool?.active()){toast('Apply or cancel placement first.',true);return;}
   if (state.busy || !acceptedTypes().includes(type)) return;
   if (state.inspectorDirty) {
     toast("Update or discard the current parameter edits first.", true);
@@ -718,6 +719,7 @@ async function addFeature(type, override) {
 }
 
 async function commitDocument(label = "Design revision") {
+  if(placementTool?.active()){toast('Apply or cancel placement first.',true);return false;}
   if (state.busy) return false;
   setBusy(true);
   state.pending = true;
@@ -923,6 +925,7 @@ function updateHistoryButtons() {
 
 async function undoRedo(direction) {
   if (state.busy || !state.snapshot?.id) return;
+  if(placementTool?.active()){placementTool.cancel();return;}
   if (state.pending && direction === "undo") {
     useSnapshot(state.snapshot);
     toast("Unsaved edits discarded.");
@@ -949,6 +952,7 @@ async function undoRedo(direction) {
 }
 
 function setTab(tab) {
+  if(state.placementDraft&&tab!=='model'){toast('Apply or cancel placement before switching views.',true);return;}
   state.tab = tab;
   updateDocumentUrl();
   $$("[data-tab]").forEach((x) =>
@@ -971,11 +975,13 @@ function setTab(tab) {
 }
 
 function selectFeature(id) {
+  if(state.placementDraft){toast('Apply or cancel placement before selecting another feature.',true);return;}
   if (state.inspectorDirty && id !== state.feature) {
     toast("Update or discard the current parameter edits first.", true);
     return;
   }
   state.feature = id;
+  if(state.tab==='model')modelViewportTools?.focusFeature(id);
   renderTree();
   renderInspector();
   drawSketch();
@@ -1023,25 +1029,37 @@ async function setup3D() {
     });
     new ResizeObserver(() => {
       resize3D();
-      if (state.snapshot) fitView();
+
     }).observe($("#viewport"));
     renderer.setAnimationLoop(() => {
       if (state.tab !== "model" || document.hidden) return;
       controls.update();
       modelInspection?.update();
+      placementTool?.update();
       modelViewportTools?.update();
       renderer.render(scene, camera);
     });
     resize3D();
     await setupGizmo();
     modelInspection=viewportInspection({$,state,get3D:()=>({THREE,renderer,meshes,faces,pickEdges}),invalidate:()=>modelViewportTools?.invalidate()});
-    modelViewportTools=viewportTools({$,esc,state,get3D:()=>({THREE,camera,renderer,controls,scene,grid,meshes,faces,pickEdges,gizmo,gizmoDragging,pointAction,acceptHit:p=>modelInspection.accepts(p)}),setGrid:value=>grid=value,highlight:highlightSelection,inspect:renderInspector,status,toast,addFeature,editDimension:async(dimension,value,revision)=>{
-      if(state.busy||state.agentBusy||state.pending||state.inspectorDirty||state.agentPreview||state.snapshot.id!==revision)throw new Error('The design changed or has pending edits. Reopen the dimension.');
+    modelViewportTools=viewportTools({$,esc,state,get3D:()=>({THREE,camera,renderer,controls,scene,grid,meshes,faces,pickEdges,gizmo,gizmoDragging,pointAction,acceptHit:p=>modelInspection.accepts(p)}),setGrid:value=>grid=value,highlight:highlightSelection,inspect:()=>{renderTree();renderInspector();},status,toast,addFeature,editDimension:async(dimension,value,revision)=>{
+      if(state.placementDraft||state.busy||state.agentBusy||state.pending||state.inspectorDirty||state.agentPreview||state.snapshot.id!==revision)throw new Error('The design changed or has pending edits. Reopen the dimension.');
       setBusy(true);
       try{
         const result=await api('/dimensions/edit',{document_id:revision,dimension_id:dimension.id,value_mm:value});
         if(state.snapshot.id!==revision)throw new Error('The source changed during regeneration. The new revision is retained in history.');
         useSnapshot(result);await refreshHistory();toast('Dimension updated.');
+      }finally{setBusy(false);}
+    }});
+    placementTool=modelPlacement({$,state,get3D:()=>({THREE,camera,renderer,controls,meshes,faces,pickEdges,gizmo,gizmoPivot,pointAction,acceptHit:p=>modelInspection.accepts(p)}),selectBody:(id,p)=>modelViewportTools.selectBody(id,p),toast,status,save:async(params,target,revision)=>{
+      if(state.busy||state.agentBusy||state.inspectorDirty||state.agentPreview||state.snapshot.id!==revision)throw new Error('Source changed or another edit is pending. Reopen Move.');
+      setBusy(true);
+      try{
+        const document=clone(state.document),f={id:uid(),type:'transform',name:'Component placement',params:{...params,...(target==='all'?{}:{target_part_id:target})},suppressed:false};
+        document.features.push(f);
+        const result=await api('/documents',{document,parent_id:revision,label:'Place '+(target==='all'?'whole model':target),include_drawing:false});
+        if(state.snapshot.id!==revision)throw new Error('Source changed during validation. Saved result is retained in history.');
+        useSnapshot(result);await refreshHistory();toast('Placement saved.');
       }finally{setBusy(false);}
     }});
   } catch (e) {
@@ -1138,63 +1156,29 @@ async function setupGizmo() {
       gizmoDragging = e.value;
       controls.enabled = !e.value;
     });
-    gizmo.addEventListener("mouseDown", () => {
-      gizmoStart = gizmoPivot.position.clone();
-    });
-    gizmo.addEventListener("objectChange", () => {
-      if (!gizmoDragging || !gizmoStart || !gizmoBody) return;
-      const {translation}=gizmoParameters();
-      transformMeshes().forEach(m=>{m.position.set(translation[0],translation[2],-translation[1]);m.quaternion.copy(gizmoPivot.quaternion);});
-    });
-    gizmo.addEventListener("mouseUp", async () => {
-      if (!gizmoStart || !gizmoBody) return;
-      const params=gizmoParameters(), body=gizmoBody;
-      transformMeshes().forEach(m=>{m.position.set(0,0,0);m.quaternion.identity();});
-      gizmoStart = null;
-      gizmo.detach();
-      if ([...params.translation,...params.rotation].some(v=>Math.abs(v)>0.00001)) {
-        await addFeature("transform", {...params,...(body==='all'?{}:{target_part_id:body})});
-      }
-    });
+    gizmo.addEventListener('objectChange',()=>{if(gizmoDragging)placementTool?.gizmoChange();});
+
   } catch (e) {
     console.warn("Translation handles unavailable:", e.message);
   }
-}
-function transformMeshes(){return [...meshes,...faces,...pickEdges].filter(m=>gizmoBody==='all'||(m.userData.part_id||m.userData.id)===gizmoBody);}
-function gizmoParameters(){
-  const shift=gizmoPivot.position.clone().sub(gizmoStart), q=gizmoPivot.quaternion;
-  const e=new THREE.Euler().setFromQuaternion(new THREE.Quaternion(q.x,-q.z,q.y,q.w),'ZYX');
-  const rotation=[e.x,e.y,e.z].map(v=>v*180/Math.PI);
-  return {rotation,translation:pivotTranslation([gizmoStart.x,-gizmoStart.z,gizmoStart.y],[shift.x,-shift.z,shift.y],rotation)};
 }
 function activePlacement(){
   const id=$('#edit-target').value==='all'?'all':state.selection.at(-1)?.part_id;
   const mesh=meshes.find(m=>m.userData.id===id);
   if(id==='all'&&meshes.length){const b=state.snapshot.metrics.bounds_mm;return {id,pivot:b[0].map((v,i)=>(v+b[1][i])/2)};}
   if(!mesh){toast('Click a face to select a body, or choose Whole model.',true);return null;}
+  const native=nativeBodyPivot(state.snapshot.body_measurements,id);
+  if(native)return {id,pivot:native};
   mesh.geometry.computeBoundingBox();const c=mesh.geometry.boundingBox.getCenter(new THREE.Vector3());
   return {id,pivot:[c.x,-c.z,c.y]};
 }
 function translateSelected(mode='translate') {
-  if (!gizmo || state.busy) return;
-  if (state.inspectorDirty || state.pending) {
-    toast("Update or discard parameter edits before moving a body.", true);
-    return;
-  }
-  const target=activePlacement();if(!target)return;
-  gizmo.setMode(mode==='rotate'?'rotate':'translate');gizmoPivot.quaternion.identity();
-  gizmoPivot.position.set(target.pivot[0],target.pivot[2],-target.pivot[1]);
-  gizmoBody = target.id;
-  gizmoStart = null;
-  gizmo.attach(gizmoPivot);
-  closeDrawers();
-  status(mode==='rotate'?'Drag a rotation ring · release to save · Esc cancels':'Drag an axis arrow · release to save · Esc cancels');
+  placementTool?.begin(mode,activePlacement());
 }
 
 function renderGeometry() {
   if (!renderer || !state.snapshot) return;
   gizmo?.detach();
-  gizmoBody = null;
   dispose(group);
   dispose(faceGroup);
   dispose(edgeGroup);
@@ -1306,7 +1290,7 @@ function fitView(view) {
 }
 
 function pickGeometry(e) {
-  if (!renderer || !state.snapshot || gizmoDragging || gizmo?.axis) return;
+  if (!renderer || !state.snapshot || state.placementDraft || gizmoDragging || gizmo?.axis) return;
   const r = renderer.domElement.getBoundingClientRect();
   pointer.set(
     ((e.clientX - r.left) / r.width) * 2 - 1,
@@ -2547,8 +2531,8 @@ $("#sketch-delete").addEventListener("click",()=>{
 $("#snap-step").addEventListener("change", drawSketch);
 document.addEventListener("keydown", (e) => {
   const text = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable;
-  if(e.key==='Escape'&&!text&&(gizmoBody||pointAction)){
-    pointAction=null;transformMeshes().forEach(m=>{m.position.set(0,0,0);m.quaternion.identity();});gizmoStart=null;gizmoBody=null;gizmo?.detach();if(controls)controls.enabled=true;$('#edit-pick-status').textContent='Placement cancelled';return;
+  if(e.key==='Escape'&&!text&&pointAction){
+    pointAction=null;$('#edit-pick-status').textContent='Point tool cancelled';return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !text) {
     e.preventDefault();

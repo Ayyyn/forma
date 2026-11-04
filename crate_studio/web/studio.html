@@ -126,17 +126,21 @@
               ><button id="fit-view" title="Fit (F)">⊡</button>
             </div>
             <div class="viewport-options">
-              <select id="selection-mode" aria-label="Selection mode">
-                <option value="bodies" selected>Components</option><option value="faces">Faces</option>
-                <option value="edges">Edges</option></select
-              ><label
-                ><input id="show-grid" type="checkbox" /> Grid</label
-              ><input id="wireframe" type="checkbox" hidden /><select id="model-display-style" aria-label="Model display style"><option value="shaded">Shaded with edges</option><option value="transparent">Transparent all</option><option value="transparent-selected">Transparent selected</option><option value="hidden">Hidden edges</option><option value="wireframe">Wireframe</option></select><label><input id="section-enabled" type="checkbox"> Section</label
-              ><select id="body-select" aria-label="Select component"><option value="">Select component…</option></select><label><input id="drag-components" type="checkbox" checked> Drag parts</label><select id="drag-plane" aria-label="Component drag plane"><option value="view">View plane</option><option value="XY">XY plane</option><option value="XZ">XZ plane</option><option value="YZ">YZ plane</option></select><select id="dimension-display" aria-label="Dimension display"><option value="all">All dimensions</option><option value="selected" selected>Selected dimensions</option><option value="off">Hide dimensions</option></select><label><input id="show-edge-sizes" type="checkbox" title="Reference lengths for up to 64 straight edges on the selected component; overlapping labels are hidden"> Edge sizes</label
-              ><label
-                ><input id="show-edges" type="checkbox" checked /> Edges</label
-              >
+              <select id="selection-mode" aria-label="Selection mode"><option value="bodies" selected>Components</option><option value="faces">Faces</option><option value="edges">Edges</option></select>
+              <select id="body-select" aria-label="Select component"><option value="">Select component…</option></select>
+              <select id="dimension-feature-scope" aria-label="Dimension feature"><option value="">Select a component</option></select>
+              <select id="model-display-style" aria-label="Model display style"><option value="shaded">Shaded with edges</option><option value="transparent">Transparent all</option><option value="transparent-selected">Transparent selected</option><option value="hidden">Hidden edges</option><option value="wireframe">Wireframe</option></select>
+              <button id="viewport-options-toggle">View options</button>
+              <div id="viewport-options-more" class="hidden">
+                <label><input id="show-grid" type="checkbox"> Grid</label>
+                <label><input id="section-enabled" type="checkbox"> Section</label>
+                <select id="dimension-display" aria-label="Dimension display"><option value="selected" selected>Feature dimensions</option><option value="bounds">Reference extents</option><option value="off">Hide dimensions</option></select>
+                <label><input id="show-edge-sizes" type="checkbox"> Selected edge length</label>
+                <label><input id="show-edges" type="checkbox" checked> Edges</label>
+              </div>
+              <input id="wireframe" type="checkbox" hidden>
             </div>
+            <svg id="move-draft-handles" aria-label="Native XYZ placement handles"></svg>
             <svg id="model-annotations" aria-label="Native component dimensions"></svg>
             <div id="model-scale"><span id="grid-scale-label">Grid · mm</span><span id="screen-scale-bar"></span><span id="screen-scale-label"></span></div>
             <div id="body-measurements" class="hidden"></div>
@@ -144,7 +148,7 @@
             <div id="dimension-editor" class="hidden" role="dialog" aria-label="Edit model dimension"><form id="dimension-editor-form"><strong id="dimension-editor-title"></strong><label>Dimension · mm<input id="dimension-value" type="number" step="any" min="0.000001" required></label><small id="dimension-editor-source"></small><p id="dimension-editor-error" role="alert"></p><div><button type="button" id="dimension-editor-cancel">Cancel</button><button class="primary" type="submit" id="dimension-editor-save">Apply</button></div></form></div>
             <div id="measurement-card" class="measurement-card hidden"></div>
             <div class="stage-hint">
-              Drag part to move · Click blue dimensions to edit · Empty space to orbit
+              Select a component · Move to place · Blue dimensions resize · Empty space to orbit
             </div>
           </section>
 
@@ -255,6 +259,20 @@
         <div class="panel-heading">
           PROPERTIES <button class="drawer-close" data-close-drawer>×</button>
         </div>
+        <section id="move-draft-panel" class="hidden">
+          <h2 id="move-draft-title">Move component</h2><p id="move-draft-target"></p>
+          <form id="move-draft-form">
+            <label class="move-constraint-label">Drag constraint<select id="move-draft-constraint" aria-label="Movement constraint"><option>X</option><option>Y</option><option>Z</option><option selected>XY</option><option>XZ</option><option>YZ</option></select></label>
+            <div class="move-vector-heading">Offset from saved position · mm</div>
+            <div class="move-vector"><label>X<input id="move-draft-x" aria-label="Move offset X" type="number" step="any" value="0" required></label><label>Y<input id="move-draft-y" aria-label="Move offset Y" type="number" step="any" value="0" required></label><label>Z<input id="move-draft-z" aria-label="Move offset Z" type="number" step="any" value="0" required></label></div>
+            <div class="move-vector-heading">Rotation about component centre · °</div>
+            <div class="move-vector"><label>X<input id="move-draft-rx" aria-label="Move rotation X" type="number" step="any" value="0" required></label><label>Y<input id="move-draft-ry" aria-label="Move rotation Y" type="number" step="any" value="0" required></label><label>Z<input id="move-draft-rz" aria-label="Move rotation Z" type="number" step="any" value="0" required></label></div>
+            <div class="move-snap"><label><input id="move-draft-snap" type="checkbox" checked> Snap drag</label><span class="move-distance-snap"><input id="move-draft-step" aria-label="Move snap increment" type="number" min=".000001" step="any" value="1" required> mm</span><span class="move-angle-snap"><input id="move-draft-angle-step" aria-label="Rotation snap increment" type="number" min=".001" step="any" value="5" required> °</span></div>
+            <p id="move-draft-centre"></p><p id="move-draft-error" role="alert"></p>
+            <div class="move-draft-actions"><button id="move-draft-cancel" type="button">Cancel</button><button id="move-draft-apply" type="submit" class="primary">Apply placement</button></div>
+            <p class="parameter-note">Use the axis handles or numeric fields. Move also allows dragging on the selected plane. Apply saves one edit; Esc cancels.</p>
+          </form>
+        </section>
         <div id="selection-inspector" class="inspector-content">
           <div class="inspector-empty">
             <span>◇</span>
