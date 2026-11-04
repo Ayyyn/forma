@@ -1,2 +1,0 @@
--r requirements-audit.txt
-sympy==1.14.0

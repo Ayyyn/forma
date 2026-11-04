@@ -1,8 +1,0 @@
-# Existing scientific environment used by the frozen frontier studies.
-# Reference tmm wheel is pinned/hashed separately; no environment mutation.
-numpy==2.2.6
-scipy==1.16.1
-pandas==2.2.3
-scikit-learn==1.7.1
-matplotlib==3.10.6
-threadpoolctl==3.6.0

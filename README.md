@@ -1,60 +1,41 @@
-# Forma CAD
+# Forma
 
-A human-editable design and geometry-verification workspace for reconfigurable, foldable and articulated physical products. Meta's Muse Wonder proposes parametric CAD; CadQuery/OpenCascade builds and checks the geometry. Studio connects requirements, editable features, sampled mechanism motion, drawings and fabrication exports. Built with FastAPI and Three.js.
+Forma is a human-editable design workspace for foldable, adjustable and articulated physical products. Meta's Muse Wonder proposes parametric CAD features and revisions; CadQuery/OpenCascade computes and checks the geometry. The Studio connects requirements, editable models, sampled motion, drawings and fabrication exports.
 
-## Run
+## Run locally
 
 Use Python 3.12 in an isolated environment:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-forma.txt
-.\.venv\Scripts\python.exe -m crate_studio --port 8770
+python -m venv .venv-forma
+.\.venv-forma\Scripts\python.exe -m pip install -r requirements-forma.txt
+.\.venv-forma\Scripts\python.exe -m crate_studio --port 8770
 ```
 
-Open http://127.0.0.1:8770/ for enclosure design and http://127.0.0.1:8770/studio for the CAD editor. No Node build is required; the browser assets are included with their notices. Native CAD installation can take several minutes. The existing local CAD runtime can also run the app: `research/vendor/cad-runtime/Scripts/python.exe -m crate_studio --port 8770`.
+Open http://127.0.0.1:8770/studio. The browser assets are included; no Node build is required. Native CAD dependencies require platform-compatible binaries. Copy `.env.example` to `.env` and set `MODEL_API_KEY` locally for Muse proposals. Manual editing and deterministic geometry/export operations do not need an API key. This is a local application; internet hosting needs a separate authentication and execution-isolation design.
 
-Manual editing, deterministic optimization and exports work without credentials. Optional Meta credentials belong in the ignored `.env`; see `.env.example`. AI proposes changes for review and explicit Apply.
+## Workflow
 
-## Current capabilities
+- Describe a product and its dimensional and functional requirements.
+- Review the proposed parametric design before applying it.
+- Edit feature parameters manually or request a targeted AI revision; retain revision history and undo/redo.
+- Inspect geometry, measurements, component placement and sampled motion. Checks are tied to the model revision.
+- Generate geometry-derived drawings and export STEP, STL, DXF, SVG, PDF and editable JSON where supported.
+- Import existing meshes or native supported geometry and use the supported inspection/edit operations.
 
-- Parametric solid features, sketches, planar push/pull, assembly placement, measurements and interference checks.
-- Editable feature history, revisions, undo/redo and named configurations.
-- Enclosure stock optimization with selectable feasible alternatives.
-- Geometry-derived drawings; STEP, STL, DXF, SVG, PDF and portable JSON exports.
-- Shared brief, enclosure specification and requirements inside Studio; deterministic panel regeneration and revision-bound checks.
-- Finite-thickness enclosure studies and five articulated folding families with real hinges/pins, sampled native-solid checks and prepared print packs.
-- Large stage canvas with pan/zoom, minimap and model overview.
-- Separate flat panel STEP/STL components and revision-bound workflow reports in the export package.
-- Exact CAD/proposal reuse, duplicate-request coalescing, and an explicit New proposal option.
+The adjustable-box prototype has four configurations and seven printed components. It uses a sliding mechanism. Separate supported rigid-panel folding families include Miura, concertina, annular half-fan, triangle strip and staged cube net.
 
-Caching measurements and the rejected experimental planner policy are documented in [FORMA_PERFORMANCE.md](docs/FORMA_PERFORMANCE.md); open http://127.0.0.1:8770/performance for evidence. Full context and medium reasoning remain the defaults.
+Native-solid validity, interference and sampled motion checks do not certify friction, strength, fatigue, manufacturing tolerances or physical fit. The enclosure load estimate is an idealized beam screen, not FEA or a safe load rating. General crease-pattern discovery and arbitrary physical simulation are outside the current implementation.
 
-[Shared workflow and physical mockup guide](docs/FORMA_WORKFLOW.md) · [Studio capabilities and limits](docs/FORMA_STUDIO.md) · [Implementation plan](docs/FORMA_BUILD_PLAN.md) · [Demo](docs/FORMA_DEMO.md)
+## Source and evaluation
 
-The supported enclosure load check is an ideal beam-deflection screen. Studio now includes native articulated Miura, concertina, open annular fan, triangle-strip and staged cube-net mechanisms with bored hinges and removable pins. Motion checks are sampled prescribed rigid kinematics; general origami, FEA, friction, fatigue, pin retention and actual physical fit remain outside that qualification. See [folding, printing and 3D import](docs/FORMA_FOLDING.md) for supported workflows and limits. The independent `continuum` research prototype retains its own scope and evidence.
+`crate_studio` contains the application. `tests` contains related offline checks. Selected `research` helpers and benchmark task definitions support reproducibility; generated runs and model receipts are not included. Some optional studies require local runtime tools or evidence outside this public checkout. Live evaluation helpers may make paid model calls; ordinary offline tests use mocks where appropriate.
 
-## Verify
-
-The [full public evaluation](docs/FORMA_FULL17.md) includes all 17 CAD-bench tasks, with a Meta-only controlled baseline and unchanged Linux STEP grader. Scores: Forma initial 68.94%, same-plan thread-engine repair replay 70.94%, direct Build123D baseline 66.35%. These are adapted public development results; 10/17 Forma tasks meet the fixed 0.95 threshold. All failures and the baseline accounting correction are retained. Current source verification: 98 checks passed. Open `http://127.0.0.1:8770/full17` for the report and evidence.
-
-The earlier [frozen subset evaluation](docs/FORMA_EVALUATION.md) ran 20 revision tasks and 11 compatible public CAD-bench tasks using real Meta responses and the unmodified upstream STEP scorer. Initial results: 19/20 revisions and 10/11 public tasks above the fixed threshold; public mean score 0.9883. The failed revision passed one targeted development rerun after a repair fix. The remaining slot-profile ambiguity is retained and explained.
-
-Open `http://127.0.0.1:8770/evaluation` in the working checkout for the review and demo timeline. A portable example is [examples/forma-instrument-case.json](examples/forma-instrument-case.json); the walkthrough is [docs/FORMA_DEMO_SCRIPT.md](docs/FORMA_DEMO_SCRIPT.md). Importing the example makes no model call.
+The harness was developed against the 17 public CAD-bench tasks under an adapted STEP-based protocol. These are development diagnostics, not held-out generalization or an official leaderboard result.
 
 ```powershell
-python -m unittest discover -s tests -p 'test_workspace_*.py' -v
-python -m unittest discover -s tests -p 'test_crate_*.py' -v
-python -m research.verify_studio_http --directory output/forma/studio/NEW_RUN
-python -m research.profile_forma --output output/forma/performance.json
+python -m unittest discover -s tests -p 'test_crate_engine.py' -v
+python -m unittest discover -s tests -p 'test_workspace_requirements.py' -v
 ```
 
-The HTTP harness expects the local application running on port 8770. These are constructed engineering checks; they are not external benchmark scores or physical test results.
-
-## Repository and retained experiments
-
-Source, tests, documentation and required browser assets are tracked. Local secrets, generated projects/exports, runtime dependencies, benchmark receipts and downloaded competition snapshots are ignored and retained on disk. Git is local until a remote is configured; ignored evidence needs its own backup.
-
-Earlier experiments are preserved as research modules and in [the historical README](docs/RESEARCH_HISTORY.md). Their findings and limitations remain applicable to those experiments, rather than the current product roadmap. Reports link to local evidence which is not included in a source checkout; missing evidence pages are not fresh evaluation results. Third-party notices are indexed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Previous-work attribution is in [crate_studio/README.md](crate_studio/README.md).
-
-See [public source preparation](docs/PUBLIC_REPOSITORY.md) before publishing this checkout. A public source repository does not host the running application. This application binds to loopback and is intended for local use; deployment needs a separate authentication, storage and execution-isolation design.
+Public scope is explicitly listed in `.gitignore`; additions need a publication review. Internal planning, experiment journals, credentials, generated projects and recordings are local-only. Third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No project-wide license has been selected.

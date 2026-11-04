@@ -1,5 +1,0 @@
--r requirements.txt
-scipy==1.16.1
-mpmath==1.3.0
-shapely==2.1.2
-matplotlib==3.10.6

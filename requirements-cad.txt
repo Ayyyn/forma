@@ -1,3 +1,0 @@
-# Isolated environment only; do not replace scientific-study dependencies.
-cadquery==2.8.0
-trimesh==5.2.0
