@@ -482,6 +482,16 @@ app.mount("/assets", StaticFiles(directory=WEB), name="assets")
 
 from .workspace_server import create_router
 
+
+def configure_native_cache():
+    """Fit a complete CAD study working set within the existing memory budget."""
+    from .motion_cache import native_motion_cache
+
+    with native_motion_cache.lock:
+        native_motion_cache.max_entries = max(native_motion_cache.max_entries, 16)
+
+
+configure_native_cache()
 app.include_router(create_router(cad_lock, read_project))
 
 

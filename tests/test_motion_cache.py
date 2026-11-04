@@ -57,6 +57,24 @@ class MotionCacheTests(unittest.TestCase):
             self.assertEqual(native.call_count, 9)
         self.assertEqual(native_motion_cache.info().hits, 2)
 
+    def test_application_working_set_avoids_recomputing_five_native_studies(self):
+        from crate_studio.server import configure_native_cache
+
+        memory_budget = native_motion_cache.max_bytes
+        configure_native_cache()
+        self.assertEqual(native_motion_cache.max_bytes, memory_budget)
+        doc = document()
+        built = cached_build(doc)
+        specs = [specification(end) for end in (4, 8, 10, 12, 40)]
+        with patch.object(ms, "_calculate_study", wraps=ms._calculate_study) as native:
+            first = [ms.mechanism_study(doc, built, spec) for spec in specs]
+            second = [ms.mechanism_study(doc, built, spec) for spec in specs]
+            self.assertEqual(native.call_count, 5)
+        self.assertEqual(first, second)
+        self.assertTrue(all(r["passed"] for r in first[:4]))
+        self.assertFalse(first[-1]["passed"])
+        self.assertEqual(native_motion_cache.info().hits, 5)
+
     def test_changed_sampling_pose_geometry_and_asset_bytes_miss(self):
         doc, spec = document(), specification(10)
         ms.mechanism_study(doc, cached_build(doc), spec)

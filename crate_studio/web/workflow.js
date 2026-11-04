@@ -521,7 +521,7 @@ export function createWorkflow(bridge) {
           max_angle_deg: Number($("#motion-max").value),
           samples: Number($("#motion-samples").value),
         },
-      }, Number($("#motion-samples").value)>73 ? 600000 : 180000);
+      }, 3600000);
       if (base !== context())
         throw new Error("Geometry changed during simulation. Run again.");
       studyKey = motionSignature(snapshot);
@@ -530,7 +530,7 @@ export function createWorkflow(bridge) {
   $("#assembly-run").onclick = () => runTask(async () => {
     const base=context();
     $("#motion-state").textContent="Checking assembly from separate native parts…";
-    const value=await bridge.api("/motion",{document:bridge.getState().document,config:{family:"assembly"}},600000);
+    const value=await bridge.api("/motion",{document:bridge.getState().document,config:{family:"assembly"}},3600000);
     if(base!==context())throw new Error("Design changed during assembly study. Run again.");
     studyKey=motionSignature(snapshot);displayStudy(value);
   });

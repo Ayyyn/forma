@@ -784,7 +784,7 @@ $("#native-study-recheck").addEventListener("click", async () => {
   $("#native-study-recheck").textContent = "Checking…";
   status("Rechecking retained study targets…");
   try {
-    const checked = await api("/study/recheck", {document: state.document, parent_id: state.snapshot.id, label: "Native study recheck"});
+    const checked = await api("/study/recheck", {document: state.document, parent_id: state.snapshot.id, label: "Native study recheck"}, 3600000);
     useSnapshot(checked);
     await refreshHistory();
     toast(checked.native_study_state?.passed ? "Native study checked. No model call." : "Native study found issues; inspect the checks.", !checked.native_study_state?.passed);
@@ -2413,11 +2413,19 @@ $("#import-file").addEventListener("change", (e) => {
 });
 $("#print-confirm").addEventListener("click",async()=>{
   if (state.busy) return;
-  state.document.metadata ||= {};
-  state.document.metadata.print_settings={printer_name:$("#print-printer").value.trim(),
+  const settings={printer_name:$("#print-printer").value.trim(),
     bed_width_mm:Number($("#print-width").value),bed_depth_mm:Number($("#print-depth").value),bed_height_mm:Number($("#print-height").value),
     nozzle_mm:Number($("#print-nozzle").value),layer_height_mm:Number($("#print-layer").value),material:$("#print-material").value.trim()};
-  if (await commitDocument("Update print settings")) {
+  const defaults={printer_name:"Unspecified",bed_width_mm:220,bed_depth_mm:220,bed_height_mm:220,nozzle_mm:.4,layer_height_mm:.2,material:"PLA"};
+  const existing={...defaults,...state.document.metadata?.print_settings};
+  const changed=Object.entries(settings).some(([key,value])=>value!==existing[key]);
+  if (changed) {
+    state.document.metadata ||= {};
+    state.document.metadata.print_settings=settings;
+  }
+  // Opening the print dialog and accepting unchanged defaults must not create
+  // a duplicate revision or invalidate an already prepared source-bound pack.
+  if (!changed || await commitDocument("Update print settings")) {
     $("#print-settings-dialog").close();
     await exportDocument("print");
   }
