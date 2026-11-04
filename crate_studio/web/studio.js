@@ -3,6 +3,7 @@ import { profileContains } from "/assets/sketch_hit.mjs";
 import { componentLibrary } from "/assets/component_library.js";
 import { drawingSections } from "/assets/drawing_sections.js";
 import { drawingRequest } from "/assets/drawing_request.js";
+import { displayChecks } from "/assets/review_display.mjs";
 let sectionUI;
 let workflow;
 let liveSequence = 0, liveLatest = null;
@@ -798,7 +799,7 @@ $("#native-study-recheck").addEventListener("click", async () => {
 });
 
 function renderFeedback() {
-  const checks = state.snapshot?.checks || [],
+  const checks = displayChecks(state.snapshot),
     fails = checks.filter((c) => c.status === "fail" || c.passed === false),
     stale = checks.some((c) => c.status === "stale");
   $("#feedback-panel").classList.toggle("error", fails.length > 0);
