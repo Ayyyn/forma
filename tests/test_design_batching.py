@@ -16,6 +16,7 @@ class ToolBatchTests(unittest.TestCase):
         def provider(base, key, route, payload, timeout):
             nonlocal phase
             phase += 1
+            self.assertEqual(timeout, 600)
             strategy = {
                 "alternatives": [
                     {
@@ -74,6 +75,7 @@ class ToolBatchTests(unittest.TestCase):
                 "Inspect supported native tools",
                 run_id="batch-control",
                 max_turns=2,
+                max_tokens=16384,
             )
 
     def test_nine_valid_calls_execute_and_hard_limit_still_rejects_seventeen(self):

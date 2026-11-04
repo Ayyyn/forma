@@ -170,11 +170,10 @@ def propose_design(
                     payload,
                     log,
                     turn + 1,
-                    timeout=600
-                    if token_limit > 16384
-                    else 240
-                    if token_limit > 8192
-                    else 120,
+                    # Initial 16k reasoning turns can also exceed four minutes
+                    # while constructing an assembly path. Keep the same bounded
+                    # deadline as continuations; ambiguous timeouts still do not retry.
+                    timeout=600 if token_limit > 8192 else 120,
                 )
             except ValueError as exc:
                 outcome["summary"] = str(exc)
