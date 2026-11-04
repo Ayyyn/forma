@@ -53,6 +53,155 @@ def response(p, rid="offline-fixture"):
 
 
 class WorkspaceAgentTests(unittest.TestCase):
+    def test_display_color_changes_appearance_only_and_validates_body_targets(self):
+        from copy import deepcopy
+
+        source = base()
+        source["metadata"] = {"native_study_targets": {"keep": True}}
+        source["display"] = {
+            "color": "#aaaaaa",
+            "colors": {"body_001": "#ff0000"},
+            "hidden_parts": ["body_001"],
+            "body_names": {"body_001": "Keep"},
+        }
+        original = deepcopy(source)
+        prompt = "change the prototype color to blue"
+        result = wa.apply_plan(
+            source,
+            plan([{"action": "display", "color": "#0000FF"}], quote=prompt),
+            prompt,
+        )
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(source, original)
+        expected = deepcopy(original)
+        expected["display"].update(color="#0000ff", colors={})
+        self.assertEqual(result["document"], expected)
+        targeted = wa.apply_plan(
+            source,
+            plan(
+                [{"action": "display", "color": "#0000ff", "part_ids": ["body_001"]}],
+                quote=prompt,
+            ),
+            prompt,
+        )
+        self.assertEqual(targeted["document"]["display"]["color"], "#aaaaaa")
+        self.assertEqual(
+            targeted["document"]["display"]["colors"], {"body_001": "#0000ff"}
+        )
+        for operation in (
+            {"action": "display", "color": "blue"},
+            {"action": "display", "color": "#0000ff", "material": "PLA"},
+            {"action": "display", "color": "#0000ff", "part_ids": []},
+            {"action": "display", "color": "#0000ff", "part_ids": None},
+            {"action": "display", "color": "#0000ff", "part_ids": ["body_999"]},
+            {
+                "action": "display",
+                "color": "#0000ff",
+                "part_ids": ["body_001", "body_001"],
+            },
+        ):
+            with self.assertRaises(ValueError):
+                wa.apply_plan(source, plan([operation], quote=prompt), prompt)
+
+    def test_quick_edit_projects_large_history_before_input_guard_without_claiming_tools(
+        self,
+    ):
+        from copy import deepcopy
+
+        source = base()
+        source["metadata"] = {
+            "brief": "Keep the mechanism",
+            "native_study_targets": {"keep": [12, 24]},
+            "native_study_review": {
+                "reports": {
+                    "failed": {
+                        "passed": False,
+                        "frames": ["historical evidence"] * 20000,
+                    }
+                }
+            },
+        }
+        original = deepcopy(source)
+        prompt = "change the prototype color to blue, preserving the geometry"
+        answer = plan([{"action": "display", "color": "#0000ff"}], quote=prompt)
+        with (
+            tempfile.TemporaryDirectory(dir="output") as folder,
+            patch.object(wa, "RUNS", Path(folder)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(wa, "request", return_value=response(answer)) as transport,
+        ):
+            result = wa.propose_document(
+                source, prompt, run_id="large-history", use_cache=False
+            )
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(transport.call_count, 1)
+            payload = transport.call_args.args[3]
+            if isinstance(payload, bytes):
+                payload = json.loads(payload)
+            context = json.loads(payload["messages"][1]["content"])
+            wire = context["document"]
+            self.assertEqual(wire["features"], original["features"])
+            self.assertEqual(
+                wire["metadata"]["native_study_targets"],
+                original["metadata"]["native_study_targets"],
+            )
+            reports = wire["metadata"]["native_study_review"]["reports"]
+            self.assertFalse(reports["index"][0]["passed"])
+            self.assertIn("no report retrieval tools", reports["retrieval"])
+            self.assertLess(len(json.dumps(payload).encode()), 180000)
+            local = json.loads(
+                (Path(folder) / "large-history/context.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(local["document"], original)
+        self.assertEqual(source, original)
+
+    def test_color_profile_is_small_and_cannot_accept_geometry_operations(self):
+        prompt = "change the prototype color to blue"
+        with self.assertRaises(ValueError):
+            wa.validate_appearance_plan(plan([None], quote=prompt))
+        for mixed in (
+            "change the prototype color to blue and height to 12 mm",
+            "change material to blue PLA",
+            "make it 40 mm tall",
+        ):
+            self.assertFalse(wa.appearance_request(mixed))
+        good = plan([{"action": "display", "color": "#0000ff"}], quote=prompt)
+        bad = plan(
+            [{"action": "update", "id": "box", "params": {"height": 999}}], quote=prompt
+        )
+        with (
+            tempfile.TemporaryDirectory(dir="output") as folder,
+            patch.object(wa, "RUNS", Path(folder)),
+            patch.object(wa, "load_env"),
+            patch.dict(os.environ, {"MODEL_API_KEY": "offline-secret"}),
+            patch.object(wa.agent, "estimated_spend", return_value=0),
+            patch.object(
+                wa, "request", side_effect=[response(bad), response(good)]
+            ) as transport,
+        ):
+            result = wa.propose_document(
+                base(), prompt, run_id="appearance", use_cache=False
+            )
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["document"]["features"], base()["features"])
+            self.assertEqual(transport.call_count, 2)
+            payload = transport.call_args_list[0].args[3]
+            self.assertEqual(payload["messages"][0]["content"], wa.APPEARANCE_SYSTEM)
+            self.assertLess(len(json.dumps(payload).encode()), 4000)
+            events = [
+                json.loads(line)
+                for line in (Path(folder) / "appearance/events.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            failed = [e for e in events if e["kind"] == "verification"][0]
+            self.assertEqual(failed["status"], "invalid")
+            self.assertIn("never geometry edits", failed["validation_error"])
+
     def test_long_response_deadline_reaches_transport_and_invalid_values_do_not(self):
         events = []
         with (
