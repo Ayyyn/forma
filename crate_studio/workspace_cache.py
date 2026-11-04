@@ -12,6 +12,7 @@ import threading
 
 from .workspace_geometry import build_document
 from .viewport_measurements import body_measurements
+from .feature_dimensions import feature_dimensions
 
 VERSION = hashlib.sha256(
     Path(__file__).with_name("workspace_geometry.py").read_bytes()
@@ -94,6 +95,7 @@ def _measured_build(document, asset_loader):
     # owns the CAD lock. Warm snapshots copy only plain data, never query BREP.
     result = build_document(document, asset_loader)
     result["body_measurements"] = body_measurements(result["parts"])
+    result["feature_dimensions"] = feature_dimensions(document, result)
     return result
 
 

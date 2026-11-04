@@ -40,6 +40,7 @@ MODULES = (
     "test_component_exports",
     "test_conversations",
     "test_viewport_measurements",
+    "test_feature_dimensions",
 )
 
 

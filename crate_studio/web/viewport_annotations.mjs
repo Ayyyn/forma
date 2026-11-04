@@ -19,3 +19,9 @@ export function envelopeDimensions(bounds) {
 export function bodyDragAllowed({button=0,modified=false,mode='bodies',busy=false,dirty=false,preview=false,measure=false,pointAction=false,handle=false}) {
   return button===0&&!modified&&mode==='bodies'&&!busy&&!dirty&&!preview&&!measure&&!pointAction&&!handle;
 }
+export function dimensionLayout(a,b) {
+  const dx=b.x-a.x,dy=b.y-a.y;
+  let angle=Math.atan2(dy,dx)*180/Math.PI;
+  if(angle>90)angle-=180;if(angle< -90)angle+=180;
+  return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,angle,length:Math.hypot(dx,dy)};
+}

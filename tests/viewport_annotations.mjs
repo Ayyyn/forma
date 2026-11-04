@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {niceStep,gridSpec,envelopeDimensions,bodyDragAllowed} from '../crate_studio/web/viewport_annotations.mjs';
+import {niceStep,gridSpec,envelopeDimensions,bodyDragAllowed,dimensionLayout} from '../crate_studio/web/viewport_annotations.mjs';
 test('grid uses readable physical intervals and changes with zoom',()=>{
   assert.equal(niceStep(.13),.2);assert.equal(niceStep(12),20);
   const a=gridSpec(.1),b=gridSpec(1);assert.equal(a.step,5);assert.equal(b.step,50);
@@ -15,4 +15,11 @@ test('dimension values use native bounds including translated or negative geomet
 test('part dragging cannot consume camera, topology, pending-edit or gizmo gestures',()=>{
   assert.equal(bodyDragAllowed({}),true);
   for(const p of [{button:2},{modified:true},{mode:'faces'},{busy:true},{dirty:true},{preview:true},{measure:true},{pointAction:true},{handle:true}])assert.equal(bodyDragAllowed(p),false);
+});
+test('dimension numbers align with their measured line and remain upright',()=>{
+  const d=dimensionLayout({x:10,y:20},{x:70,y:100});assert.deepEqual([d.x,d.y,d.length],[40,60,100]);
+  assert.ok(Math.abs(d.angle-53.130102354)<1e-8);
+  for(const b of [{x:-2,y:3},{x:-2,y:-3},{x:0,y:-10},{x:10,y:0}]){
+    const x=dimensionLayout({x:0,y:0},b);assert.ok(x.angle>=-90&&x.angle<=90);
+  }
 });

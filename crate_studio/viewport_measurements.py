@@ -17,6 +17,7 @@ def body_measurements(parts):
                         "radius_mm": float(edge.radius()),
                         "diameter_mm": 2 * float(edge.radius()),
                         "center_mm": list(edge.arcCenter().toTuple()),
+                        "edge_point_mm": list(edge.startPoint().toTuple()),
                     }
                 )
         rows.append(

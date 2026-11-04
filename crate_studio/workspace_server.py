@@ -519,6 +519,7 @@ def snapshot(document, cad_lock, drawing_context=None, include_drawing=True):
             "edge_meta": result["edge_meta"],
         },
         "body_measurements": deepcopy(result["body_measurements"]),
+        "feature_dimensions": deepcopy(result["feature_dimensions"]),
         "metrics": result["metrics"],
         "checks": checks,
         "feature_results": statuses,
@@ -762,6 +763,32 @@ def create_router(cad_lock, crate_reader=None):
     from .conversations import Conversations
 
     chat = Conversations(DATA / "conversations.sqlite3", DOCS)
+
+    class DimensionEditBody(BaseModel):
+        document_id: str
+        dimension_id: str = Field(min_length=1, max_length=200)
+        value_mm: float = Field(gt=0, le=1e6, allow_inf_nan=False)
+
+    @router.post("/dimensions/edit")
+    def dimension_edit(body: DimensionEditBody):
+        from .feature_dimensions import edit_dimension
+
+        source = read_document(
+            valid_id(body.document_id), cad_lock, include_drawing=False
+        )
+        document, row = edit_dimension(
+            source["document"],
+            source["feature_dimensions"],
+            body.dimension_id,
+            body.value_mm,
+        )
+        return save_document(
+            document,
+            cad_lock,
+            parent_id=source["id"],
+            label=f"Edit {row['feature_name']} · {row['label']}",
+            include_drawing=False,
+        )
 
     @router.get("/conversation/{document_id}")
     def conversation(document_id: str):

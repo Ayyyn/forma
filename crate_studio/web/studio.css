@@ -1628,3 +1628,9 @@ dialog h2 {
 .studio-assistant.chat-minimized>:not(.assistant-heading){display:none}
 .studio-assistant.chat-minimized .assistant-heading{margin:0}
 .drawing-actions {flex-wrap:wrap;gap:6px;}
+#grid-scale-label{display:none}
+#model-annotations .editable-dimension{pointer-events:all;cursor:pointer;outline:none}
+#model-annotations .editable-dimension:hover rect,#model-annotations .editable-dimension:focus rect{fill:#dfebff;stroke:#5475bc}
+#dimension-editor{position:absolute;z-index:12;background:#fff;border:1px solid #97acc9;border-radius:7px;box-shadow:0 5px 24px #213a5933;padding:14px;width:240px;color:#273d56;font-size:12px}
+#dimension-editor form{display:flex;flex-direction:column;gap:10px}#dimension-editor label{display:flex;flex-direction:column;gap:5px}#dimension-value{padding:8px;width:100%;box-sizing:border-box;border:1px solid #93a8c4;border-radius:4px;font:14px var(--mono)}#dimension-editor small{font-size:10px;line-height:1.5;color:#53677e}#dimension-editor-error{color:#b44435;margin:0}#dimension-editor form>div{display:flex;justify-content:flex-end;gap:7px}
+#section-controls{position:absolute;right:14px;top:92px;z-index:4;max-width:280px;padding:9px;border:1px solid #b4c4d6;background:#fffffff5;border-radius:5px;font-size:11px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}#section-controls.hidden{display:none}#section-controls label{display:flex;gap:5px;align-items:center}#section-position{width:110px}#section-controls small{width:100%;font-size:9px;color:#5a6d80}#model-tab:has(#section-enabled:checked) #body-measurements{top:200px}

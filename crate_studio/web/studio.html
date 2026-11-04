@@ -130,9 +130,9 @@
                 <option value="bodies" selected>Components</option><option value="faces">Faces</option>
                 <option value="edges">Edges</option></select
               ><label
-                ><input id="show-grid" type="checkbox" checked /> Grid</label
-              ><label><input id="wireframe" type="checkbox" /> Wireframe</label
-              ><select id="body-select" aria-label="Select component"><option value="">Select component…</option></select><label><input id="drag-components" type="checkbox" checked> Drag parts</label><select id="drag-plane" aria-label="Component drag plane"><option value="view">View plane</option><option value="XY">XY plane</option><option value="XZ">XZ plane</option><option value="YZ">YZ plane</option></select><select id="dimension-display" aria-label="Dimension display"><option value="all">All body sizes</option><option value="selected">Selected body sizes</option><option value="off">Hide dimensions</option></select><label><input id="show-edge-sizes" type="checkbox" title="Reference lengths for up to 64 straight edges on the selected component; overlapping labels are hidden"> Edge sizes</label
+                ><input id="show-grid" type="checkbox" /> Grid</label
+              ><input id="wireframe" type="checkbox" hidden /><select id="model-display-style" aria-label="Model display style"><option value="shaded">Shaded with edges</option><option value="transparent">Transparent all</option><option value="transparent-selected">Transparent selected</option><option value="hidden">Hidden edges</option><option value="wireframe">Wireframe</option></select><label><input id="section-enabled" type="checkbox"> Section</label
+              ><select id="body-select" aria-label="Select component"><option value="">Select component…</option></select><label><input id="drag-components" type="checkbox" checked> Drag parts</label><select id="drag-plane" aria-label="Component drag plane"><option value="view">View plane</option><option value="XY">XY plane</option><option value="XZ">XZ plane</option><option value="YZ">YZ plane</option></select><select id="dimension-display" aria-label="Dimension display"><option value="all">All dimensions</option><option value="selected" selected>Selected dimensions</option><option value="off">Hide dimensions</option></select><label><input id="show-edge-sizes" type="checkbox" title="Reference lengths for up to 64 straight edges on the selected component; overlapping labels are hidden"> Edge sizes</label
               ><label
                 ><input id="show-edges" type="checkbox" checked /> Edges</label
               >
@@ -140,9 +140,11 @@
             <svg id="model-annotations" aria-label="Native component dimensions"></svg>
             <div id="model-scale"><span id="grid-scale-label">Grid · mm</span><span id="screen-scale-bar"></span><span id="screen-scale-label"></span></div>
             <div id="body-measurements" class="hidden"></div>
+            <div id="section-controls" class="hidden"><label>Plane <select id="section-cut-axis" aria-label="Section plane"><option>X</option><option>Y</option><option selected>Z</option></select></label><input id="section-position" aria-label="Section position" type="range" min="0" max="100" step=".1" value="50"><span id="section-offset-label"></span><label><input id="section-flip" type="checkbox" checked> Flip</label><small>Visual cut · no section cap · exports unchanged</small></div>
+            <div id="dimension-editor" class="hidden" role="dialog" aria-label="Edit model dimension"><form id="dimension-editor-form"><strong id="dimension-editor-title"></strong><label>Dimension · mm<input id="dimension-value" type="number" step="any" min="0.000001" required></label><small id="dimension-editor-source"></small><p id="dimension-editor-error" role="alert"></p><div><button type="button" id="dimension-editor-cancel">Cancel</button><button class="primary" type="submit" id="dimension-editor-save">Apply</button></div></form></div>
             <div id="measurement-card" class="measurement-card hidden"></div>
             <div class="stage-hint">
-              Drag component to move · Empty space to orbit · Right-drag to pan · Scroll to zoom
+              Drag part to move · Click blue dimensions to edit · Empty space to orbit
             </div>
           </section>
 

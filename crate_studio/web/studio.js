@@ -9,9 +9,11 @@ import { selectedSketch, sketchKeyCommand } from "/assets/sketch_actions.mjs";
 import { pivotTranslation } from "/assets/manual_geometry.mjs";
 import { conversationUI } from "/assets/conversation.js";
 import {viewportTools} from '/assets/viewport_tools.js';
+import {viewportInspection} from '/assets/viewport_inspection.js';
 let chatUI, pointAction=null, pickedHole=null, placementSelection=null;
 let modelViewFitted=false;
 let modelViewportTools;
+let modelInspection;
 function cancelDirectDrag(){modelViewportTools?.cancel();}
 let sectionUI;
 let sketchReferenceKey = null, sketchReferenceLines = [], sketchFitKey = null;
@@ -1026,12 +1028,22 @@ async function setup3D() {
     renderer.setAnimationLoop(() => {
       if (state.tab !== "model" || document.hidden) return;
       controls.update();
+      modelInspection?.update();
       modelViewportTools?.update();
       renderer.render(scene, camera);
     });
     resize3D();
     await setupGizmo();
-    modelViewportTools=viewportTools({$,esc,state,get3D:()=>({THREE,camera,renderer,controls,scene,grid,meshes,faces,pickEdges,gizmo,gizmoDragging,pointAction}),setGrid:value=>grid=value,highlight:highlightSelection,inspect:renderInspector,status,toast,addFeature});
+    modelInspection=viewportInspection({$,state,get3D:()=>({THREE,renderer,meshes,faces,pickEdges}),invalidate:()=>modelViewportTools?.invalidate()});
+    modelViewportTools=viewportTools({$,esc,state,get3D:()=>({THREE,camera,renderer,controls,scene,grid,meshes,faces,pickEdges,gizmo,gizmoDragging,pointAction,acceptHit:p=>modelInspection.accepts(p)}),setGrid:value=>grid=value,highlight:highlightSelection,inspect:renderInspector,status,toast,addFeature,editDimension:async(dimension,value,revision)=>{
+      if(state.busy||state.agentBusy||state.pending||state.inspectorDirty||state.agentPreview||state.snapshot.id!==revision)throw new Error('The design changed or has pending edits. Reopen the dimension.');
+      setBusy(true);
+      try{
+        const result=await api('/dimensions/edit',{document_id:revision,dimension_id:dimension.id,value_mm:value});
+        if(state.snapshot.id!==revision)throw new Error('The source changed during regeneration. The new revision is retained in history.');
+        useSnapshot(result);await refreshHistory();toast('Dimension updated.');
+      }finally{setBusy(false);}
+    }});
   } catch (e) {
     $("#webgl-fallback").classList.remove("hidden");
     $("#webgl-fallback").textContent =
@@ -1241,6 +1253,7 @@ function renderGeometry() {
     faces.push(mesh);
   }
   buildPickEdges(data);
+  modelInspection?.sync();
   modelViewportTools?.sync();
   if(!modelViewFitted&&meshes.length){fitView();modelViewFitted=true;}
 }
@@ -1312,7 +1325,7 @@ function pickGeometry(e) {
   );
   const hit = raycaster
     .intersectObjects(bodyMode?meshes:edgeMode ? pickEdges : faces.length ? faces : meshes,false)
-    .find((x) => x.object.visible);
+    .find((x) => x.object.visible && (!modelInspection||modelInspection.accepts(x.point)));
   if (!hit) {
     state.selection = [];
     highlightSelection();
