@@ -330,7 +330,7 @@ def tool_definitions():
         ),
         (
             "check_motion",
-            "Test a model-declared general mechanism path on real solids. Root-first fixed/revolute/prismatic tree, optional loop constraints, 2..12 named states. Virtual joints do NOT verify hardware, locks, engagement or loads. Get schema from mechanism_reference.",
+            "Test a model-declared general mechanism path on real solids. spec:{} uses this candidate's saved metadata.design_mechanism; otherwise supply the full spec. Root-first fixed/revolute/prismatic tree, optional loop constraints, 2..12 named states. Virtual joints do NOT verify hardware, locks, engagement or loads. Get schema from mechanism_reference.",
             _object({**_CID, "spec": {"type": "object"}}),
         ),
         (
@@ -537,6 +537,17 @@ class DesignSession:
                         "Run check_motion on this exact candidate before using mechanism_spec:{}"
                     )
                 arguments = {**arguments, "mechanism_spec": deepcopy(recorded)}
+            if name == "check_motion" and arguments.get("spec") == {}:
+                declared = (
+                    self._candidate(referenced)["document"]
+                    .get("metadata", {})
+                    .get("design_mechanism")
+                )
+                if not isinstance(declared, dict) or not declared:
+                    raise ValueError(
+                        "No declared mechanism; provide the full bounded motion spec"
+                    )
+                arguments = {**arguments, "spec": deepcopy(declared)}
             if name == "check_retention" and arguments.get("spec") == {}:
                 contract = (
                     self._candidate(referenced)["document"]

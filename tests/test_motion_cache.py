@@ -20,6 +20,26 @@ class MotionCacheTests(unittest.TestCase):
         cache_clear()
         native_motion_cache.clear()
 
+    def test_declared_motion_shorthand_keeps_collision_failures_and_rebinds_edits(self):
+        from crate_studio.design_tools import DesignSession
+
+        doc = document()
+        doc["metadata"] = {"design_mechanism": specification()}
+        with tempfile.TemporaryDirectory(dir="output") as root:
+            session = DesignSession(doc, "Inspect existing motion", Path(root) / "saved")
+            result = session.call("check_motion", {"candidate_id": "base", "spec": {}})
+            self.assertTrue(result["ok"], result)
+            self.assertFalse(result["passed"])
+            self.assertEqual(result["spec"]["states"], specification()["states"])
+            session.candidates["base"]["document"]["metadata"]["design_mechanism"] = specification(10)
+            revised = session.call("check_motion", {"candidate_id": "base", "spec": {}})
+            self.assertTrue(revised["passed"], revised)
+            self.assertEqual(revised["spec"]["states"], specification(10)["states"])
+            missing = DesignSession(document(), "No fabricated mechanism", Path(root) / "missing")
+            rejected = missing.call("check_motion", {"candidate_id": "base", "spec": {}})
+            self.assertFalse(rejected["ok"])
+            self.assertIn("No declared mechanism", rejected["error"])
+
     def test_identical_concurrent_requests_share_native_work_and_copy_reports(self):
         doc, spec = document(), specification()
         built = cached_build(doc)
