@@ -833,10 +833,22 @@ input[type="checkbox"] {
   position: absolute;
   bottom: 15px;
   left: 20px;
-  font-size: 8px;
-  color: #a1afc3;
+  font-size: 10px;
+  color: #485e72;
   pointer-events: none;
   max-width: 70%;
+}
+.sketch-source-label {
+  position: absolute;
+  top: 40px;
+  left: 20px;
+  padding: 6px 9px;
+  border: 1px solid #c4cfd9;
+  border-radius: 4px;
+  background: #ffffffed;
+  color: #344b5d;
+  font-size: 10px;
+  pointer-events: none;
 }
 #annotation-layer {
   position: absolute;

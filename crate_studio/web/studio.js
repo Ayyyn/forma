@@ -4,7 +4,9 @@ import { componentLibrary } from "/assets/component_library.js";
 import { drawingSections } from "/assets/drawing_sections.js";
 import { drawingRequest } from "/assets/drawing_request.js";
 import { displayChecks } from "/assets/review_display.mjs";
+import { referenceSegments, savedSketchCount } from "/assets/sketch_reference.mjs";
 let sectionUI;
+let sketchReferenceKey = null, sketchReferenceLines = [], sketchFitKey = null;
 let workflow;
 let liveSequence = 0, liveLatest = null;
 // Scrolling a long inspector must never silently change a CAD dimension.
@@ -936,8 +938,9 @@ function setTab(tab) {
   if(tab==='canvas')ensureDrawing();
   if (tab === "model") resize3D();
   if (tab === "sketch") {
-    if (state.snapshot.folding) $("#sketch-help").textContent="Nominal hinge-axis map. Edit the folding feature; physical panel and barrel outlines are in Drawing and Print pack.";
     resizeSketch();
+    const key=JSON.stringify([state.snapshot.geometry_signature,state.snapshot.geometry_version,state.snapshot.asset_identity]);
+    if (key!==sketchFitKey) { fitSketch(); sketchFitKey=key; }
     drawSketch();
     renderAnnotations();
   }
@@ -1511,6 +1514,32 @@ function drawSketch() {
   ctx.moveTo(ox, 0);
   ctx.lineTo(ox, sketch.height);
   ctx.stroke();
+  const source = state.snapshot;
+  const referenceKey=JSON.stringify([source?.geometry_signature,source?.geometry_version,source?.asset_identity]);
+  if (sketchReferenceKey!==referenceKey) {
+    sketchReferenceLines=referenceSegments(source?.geometry?.parts);
+    sketchReferenceKey=referenceKey;
+  }
+  const folding=!!source?.folding;
+  const referenceVisible=$("#sketch-reference").checked && !folding;
+  $("#sketch-reference").disabled=folding || !sketchReferenceLines.length;
+  const count=savedSketchCount(state.document);
+  $("#sketch-source-label").textContent=folding ? "Nominal hinge-axis map" :
+    `${count ? count+" editable sketch"+(count===1?"":"es") : "No saved sketches"}${referenceVisible && sketchReferenceLines.length ? " · XY mesh reference" : ""}`;
+  if (referenceVisible) {
+    ctx.strokeStyle="#566f7e";
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    for (const [x1,y1,x2,y2] of sketchReferenceLines) {
+      ctx.moveTo(...sketchToScreen(x1,y1));
+      ctx.lineTo(...sketchToScreen(x2,y2));
+    }
+    ctx.stroke();
+  }
+  $("#sketch-help").textContent = folding ? "Nominal hinge map; edit the folding feature. Physical outlines are in Drawing." :
+    state.sketchTool!=="select" ? `Drag to draw a ${state.sketchTool}. Creates an editable profile with a 10 mm extrusion.` :
+    !count && state.document?.features?.length ? "Solid features define this model. Reference edges are not editable sketches; edit solids in Model or draw a new profile." :
+    count ? "Select a profile to edit it. Middle-drag or Alt-drag to pan." : "Choose Rectangle or Circle to create an editable sketch.";
   for (const f of state.document?.features || []) {
     if (f.type === "sketch_extrude" && !f.suppressed)
       drawProfile(ctx, f.params, f.id === state.feature);
@@ -1586,10 +1615,7 @@ function setSketchTool(tool) {
   );
   $("#sketch-canvas").style.cursor =
     tool === "select" ? "default" : "crosshair";
-  $("#sketch-help").textContent =
-    tool === "select"
-      ? "Click a profile to edit it. Middle-drag or Alt-drag to pan."
-      : `Drag to draw a ${tool}. Creates an editable profile with a 10 mm extrusion.`;
+  drawSketch();
 }
 
 const canvas = $("#sketch-canvas");
@@ -2447,7 +2473,7 @@ $("#sketch-minus").addEventListener("click", () => {
   drawSketch();
   renderAnnotations();
 });
-$("#sketch-fit").addEventListener("click", () => {
+function fitSketch() {
   const b = state.snapshot.metrics?.bounds_mm || [
     [-50, -50, 0],
     [50, 50, 0],
@@ -2461,7 +2487,9 @@ $("#sketch-fit").addEventListener("click", () => {
     ) * 0.6;
   drawSketch();
   renderAnnotations();
-});
+}
+$("#sketch-fit").addEventListener("click", fitSketch);
+$("#sketch-reference").addEventListener("change", drawSketch);
 $("#snap-step").addEventListener("change", drawSketch);
 document.addEventListener("keydown", (e) => {
   const text = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);

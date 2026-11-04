@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import { OrbitControls } from "/assets/vendor/OrbitControls.js";
 import { recordCanvasVideo, videoFramePlan, motionSettingsCurrent } from "/assets/motion_video.mjs";
+import { motionBinding, motionAutoLoad } from "/assets/motion_autoload.mjs";
 
 const $ = (s) => document.querySelector(s);
 const copy = (x) => JSON.parse(JSON.stringify(x));
-const motionSignature = (value) => JSON.stringify([value.geometry_signature, value.document.metadata?.design_mechanism || null, value.document.metadata?.assembly_plan || null]);
+const motionSignature = motionBinding;
 const escape = (x) =>
   String(x ?? "").replace(
     /[&<>"']/g,
@@ -332,7 +333,7 @@ export function createWorkflow(bridge) {
   function frameMotion(viewCamera, viewControls = null) {
     group.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(group);
-    study.frames.forEach(frame => {
+    (study?.frames || []).forEach(frame => {
       if (frame.bounds_mm) {
         bounds.expandByPoint(new THREE.Vector3(...frame.bounds_mm[0]));
         bounds.expandByPoint(new THREE.Vector3(...frame.bounds_mm[1]));
@@ -377,23 +378,37 @@ export function createWorkflow(bridge) {
     });
     group = null;
   }
+  function addMechanismMeshes(parts) {
+    group = new THREE.Group();
+    parts.forEach((p,i) => {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position",new THREE.Float32BufferAttribute(p.vertices,3));
+      geometry.setIndex(p.triangles); geometry.computeVertexNormals();
+      const color=p.kind==="pin" ? 0xa87a3e : [0xb7c9d1,0x91adb7,0xc8b89d][(p.face ?? i)%3];
+      const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color,roughness:.65}));
+      mesh.userData={part:p,baseColor:color};mesh.matrixAutoUpdate=false;
+      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:0x46565d,transparent:true,opacity:.45})));
+      group.add(mesh);
+    });
+  }
+  function showModelReference() {
+    if (study || !snapshot?.geometry?.parts?.length) return;
+    clearGroup();
+    addMechanismMeshes(snapshot.geometry.parts);
+    scene.add(group);
+    resizeMotion();
+    fitMotion();
+    $("#motion-metrics").textContent="CAD reference pose · motion not loaded yet. No new verification result.";
+  }
   function displayStudy(value) {
     initMotion();
     clearGroup();
     study = value;
-    group = new THREE.Group();
     if (value.family === "panel_hinges" || value.family === "general_mechanism") {
-      value.parts.forEach((p,i) => {
-        const geometry=new THREE.BufferGeometry();
-        geometry.setAttribute("position",new THREE.Float32BufferAttribute(p.vertices,3));
-        geometry.setIndex(p.triangles); geometry.computeVertexNormals();
-        const color=p.kind==="pin" ? 0xa87a3e : [0xb7c9d1,0x91adb7,0xc8b89d][(p.face ?? i)%3];
-        const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color,roughness:.65}));
-        mesh.userData={part:p,baseColor:color};mesh.matrixAutoUpdate=false;
-        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:0x46565d,transparent:true,opacity:.45})));
-        group.add(mesh);
-      });
-    } else value.panels.forEach((p, i) => {
+      addMechanismMeshes(value.parts);
+    } else {
+      group = new THREE.Group();
+      value.panels.forEach((p, i) => {
       const pivot = new THREE.Group();
       pivot.position.fromArray(p.pivot_mm);
       pivot.userData.panel = p;
@@ -417,8 +432,10 @@ export function createWorkflow(bridge) {
       );
       pivot.add(mesh);
       group.add(pivot);
-    });
+      });
+    }
     scene.add(group);
+    $("#motion-tab h1").textContent = value.study_kind === "assembly" ? "Assembly sequence" : value.family === "general_mechanism" ? "Mechanism motion" : $("#motion-tab h1").textContent;
     const stateButtons = $("#motion-states");
     stateButtons.classList.toggle("hidden", value.family !== "general_mechanism");
     stateButtons.innerHTML = value.family === "general_mechanism" ? value.spec.states.map((state,index) => {
@@ -510,7 +527,7 @@ export function createWorkflow(bridge) {
       )
       .join("");
   }
-  $("#motion-run").onclick = () =>
+  const loadMotion = () =>
     runTask(async () => {
       const base = context();
       $("#motion-state").textContent = "Checking native mechanism geometry…";
@@ -527,6 +544,14 @@ export function createWorkflow(bridge) {
       studyKey = motionSignature(snapshot);
       displayStudy(value);
     });
+  $("#motion-run").onclick = loadMotion;
+  const ensureMotion = motionAutoLoad({
+    getSnapshot:()=>snapshot,
+    isVisible:()=>$("#motion-tab").classList.contains("active"),
+    isBusy:()=>task || bridge.getState().busy || bridge.getState().pending || bridge.getState().inspectorDirty || bridge.getState().agentPreview,
+    hasStudy:()=>!!study,
+    load:loadMotion,
+  });
   $("#assembly-run").onclick = () => runTask(async () => {
     const base=context();
     $("#motion-state").textContent="Checking assembly from separate native parts…";
@@ -931,6 +956,15 @@ export function createWorkflow(bridge) {
         $("#motion-metrics").textContent = "Previous motion results are stale.";
       }
       renderCanvas();
+      if ($("#motion-tab").classList.contains("active")) {
+        try {
+          initMotion();
+          if (!study) showModelReference();
+          ensureMotion();
+        } catch (error) {
+          $("#motion-state").textContent="3D preview unavailable: " + error.message;
+        }
+      }
     },
     tabChanged(tab) {
       if (tab !== "motion") {
@@ -947,6 +981,8 @@ export function createWorkflow(bridge) {
         try {
           initMotion();
           resizeMotion();
+          if (!study) showModelReference();
+          ensureMotion();
         } catch (error) {
           $("#motion-state").textContent =
             "3D preview unavailable: " + error.message;
