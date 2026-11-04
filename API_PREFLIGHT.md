@@ -1,6 +1,6 @@
 # API availability before product implementation
 
-The user reports $150 in Meta Model API credits and $100 in Baseten credits. Both accounts now pass authenticated inference checks from this workstation. Credit balance is separate and has not been verified. See [recorded results](API_ACCESS_RESULTS.md).
+Both configured provider accounts passed authenticated inference checks from the development workstation. Credit balance is separate and has not been verified. See [recorded results](API_ACCESS_RESULTS.md).
 
 ## Run
 

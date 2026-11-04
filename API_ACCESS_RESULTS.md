@@ -24,7 +24,7 @@ The authenticated text and vision calls succeeded without geographic errors for 
 4. Reasoning counts toward the completion allowance. Meta vision exhausted the initial 768-token cap; a targeted repeat at 2048 succeeded, using 866 completion tokens. Budget future tasks according to complexity.
 5. The original tool validator incorrectly required the text `600`; both models returned the correct numeric value `600.0`. The validator now checks numeric equivalence, and both real round trips passed on repeat.
 6. The first run did not test SAM segmentation, voice transcription, or Muse Wonder; subsequent tests below now establish basic access to these models. Image editing, streaming, sustained rate limits, and deployment-host access remain untested. A catalog listing alone does not verify inference on a model.
-7. User-reported credit grants are Meta $150 and Baseten $100. API usage was returned, but the account balances and dollar charges were not queried or verified.
+7. API usage was returned, but account balances and dollar charges were not queried or verified. Personal credit-grant details are retained privately.
 
 ## Reproducible evidence
 

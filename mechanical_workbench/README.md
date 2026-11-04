@@ -110,7 +110,7 @@ Raw records: `output/mechanical-workbench/runs/<id>/` contains `manifest.json`,
 
 ## Start, reproduce, inspect
 
-From `C:/Users/LENOVO/meta_hack`, using the existing Python 3.12 scientific runtime:
+From the repository root, using the existing Python 3.12 scientific runtime:
 
 ```powershell
 python -m mechanical_workbench serve --port 8770

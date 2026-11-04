@@ -7,10 +7,21 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from research.run_forma_full17 import baseline, BASELINE_SYSTEM
+from research.run_forma_full17 import baseline, BASELINE_SYSTEM, linux, ROOT
 
 
 class BaselineHarnessTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows-to-WSL mount conversion")
+    def test_mount_path_uses_current_repository_and_drive(self):
+        source = ROOT / "output" / "mount conversion test"
+        expected = "/mnt/" + source.drive[0].lower() + "/" + source.as_posix()[3:]
+        self.assertEqual(linux(source), expected)
+
+    def test_mount_path_rejects_root_and_outside_repository(self):
+        for source in (ROOT, ROOT.parent / "other-project", ROOT / ".." / "outside"):
+            with self.subTest(source=source), self.assertRaisesRegex(ValueError, "project"):
+                linux(source)
+
     def transport(self, text, ident):
         return (
             {

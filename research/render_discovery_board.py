@@ -1,10 +1,17 @@
 """Render our trusted local project board with user-requested downloads enabled."""
 from pathlib import Path
-import json,subprocess,sys
+import argparse,json,subprocess,sys
 ROOT=Path(__file__).resolve().parents[1]
-fragment=Path('C:/Users/LENOVO/.codex/visualizations/2026/10/27/01a17d16-9e76-7400-b87a-08dd7c219596/nonlinear-discovery-board.html')
-renderer=Path('C:/Users/LENOVO/.codex/plugins/cache/openai-bundled/visualize/1.0.55/skills/visualize/scripts/render.py')
+parser=argparse.ArgumentParser(description='Render a local board using a trusted, separately installed visualization wrapper.')
+parser.add_argument('--fragment',type=Path,default=ROOT/'output/discovery-board/fragment.html')
+parser.add_argument('--renderer',type=Path,required=True,help='Path to the trusted wrapper render.py')
+args=parser.parse_args()
+fragment=args.fragment.resolve()
+renderer=args.renderer.resolve()
+for path in (fragment,renderer):
+    if not path.is_file():parser.error('Required local file does not exist: '+str(path))
 destination=ROOT/'output/discovery-board/index.html'
+destination.parent.mkdir(parents=True,exist_ok=True)
 subprocess.run([sys.executable,str(renderer),str(fragment),str(destination),'--force'],check=True)
 text=destination.read_text(encoding='utf-8')
 needle='sandbox="allow-scripts"'

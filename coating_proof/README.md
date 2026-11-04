@@ -1,6 +1,6 @@
 # Optical forward proof and Meta-written search programs
 
-Run from `C:\Users\LENOVO\meta_hack`:
+Run from the repository root:
 
 ```powershell
 python -m coating_proof

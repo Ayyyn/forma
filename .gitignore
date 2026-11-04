@@ -8,7 +8,9 @@ artifacts/runs/
 research/vendor/
 node_modules/
 .venv/
+.venv-*/
 venv/
+venv-*/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
@@ -33,6 +35,44 @@ Thumbs.db
 *.key
 credentials.json
 token.json
+# Local credentials, editor state and alternate runtime environments
+.codex/
+.agents/
+.idea/
+.vscode/
+.python-version.local
+.python_history
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.db
+*.db-*
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+.netrc
+.npmrc
+.pypirc
+id_rsa
+id_ed25519
+*.bak
+*.orig
+*.rej
+# Keep all ad-hoc project data, downloads and release bundles in these folders.
+/local/
+/private/
+/downloads/
+/releases/
 # Private engineering record; publish only with explicit user approval
 /docs/FORMA_ENGINEERING_LOG.md
 /docs/FORMA_BUDGET_SNAPSHOT.json
+# Private user-supplied demo media; retain locally, exclude from public source.
+/way4_box_screen_recordings/
+/printed_objects_pics_n_videos/

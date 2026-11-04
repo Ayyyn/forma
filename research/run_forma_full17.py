@@ -30,10 +30,12 @@ def load(p):
 
 
 def linux(p):
-    p = Path(p).resolve().as_posix()
-    if not p.startswith("C:/Users/LENOVO/meta_hack/"):
+    p = Path(p).resolve()
+    if not p.is_relative_to(ROOT) or p == ROOT:
         raise ValueError("Docker mounts must stay in the project")
-    return "/mnt/c/" + p[3:]
+    if len(p.drive) != 2 or p.drive[1] != ":":
+        raise ValueError("This runner requires a Windows drive mounted by WSL")
+    return "/mnt/" + p.drive[0].lower() + "/" + p.as_posix()[3:]
 
 
 def container(mode, source, output, task=None, timeout=None):

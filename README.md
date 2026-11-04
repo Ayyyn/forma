@@ -1,6 +1,6 @@
 # Forma CAD
 
-A local, human-editable CAD workspace with Meta-assisted feature proposals, enclosure sizing, engineering drawings and neutral solid exports. Built with CadQuery/OpenCascade, FastAPI and Three.js.
+A human-editable design and geometry-verification workspace for reconfigurable, foldable and articulated physical products. Meta's Muse Wonder proposes parametric CAD; CadQuery/OpenCascade builds and checks the geometry. Studio connects requirements, editable features, sampled mechanism motion, drawings and fabrication exports. Built with FastAPI and Three.js.
 
 ## Run
 
@@ -12,7 +12,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m crate_studio --port 8770
 ```
 
-Open http://127.0.0.1:8770/ for enclosure design and http://127.0.0.1:8770/studio for the CAD editor. The existing local CAD runtime can also run the app: `research/vendor/cad-runtime/Scripts/python.exe -m crate_studio --port 8770`.
+Open http://127.0.0.1:8770/ for enclosure design and http://127.0.0.1:8770/studio for the CAD editor. No Node build is required; the browser assets are included with their notices. Native CAD installation can take several minutes. The existing local CAD runtime can also run the app: `research/vendor/cad-runtime/Scripts/python.exe -m crate_studio --port 8770`.
 
 Manual editing, deterministic optimization and exports work without credentials. Optional Meta credentials belong in the ignored `.env`; see `.env.example`. AI proposes changes for review and explicit Apply.
 
@@ -55,4 +55,6 @@ The HTTP harness expects the local application running on port 8770. These are c
 
 Source, tests, documentation and required browser assets are tracked. Local secrets, generated projects/exports, runtime dependencies, benchmark receipts and downloaded competition snapshots are ignored and retained on disk. Git is local until a remote is configured; ignored evidence needs its own backup.
 
-Earlier experiments are preserved as research modules and in [the historical README](docs/RESEARCH_HISTORY.md). Their findings and limitations remain applicable to those experiments, rather than the current product roadmap. Third-party browser assets retain their licenses under the corresponding vendor directories. Previous-work attribution is in [crate_studio/README.md](crate_studio/README.md).
+Earlier experiments are preserved as research modules and in [the historical README](docs/RESEARCH_HISTORY.md). Their findings and limitations remain applicable to those experiments, rather than the current product roadmap. Reports link to local evidence which is not included in a source checkout; missing evidence pages are not fresh evaluation results. Third-party notices are indexed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Previous-work attribution is in [crate_studio/README.md](crate_studio/README.md).
+
+See [public source preparation](docs/PUBLIC_REPOSITORY.md) before publishing this checkout. A public source repository does not host the running application. This application binds to loopback and is intended for local use; deployment needs a separate authentication, storage and execution-isolation design.

@@ -10,7 +10,7 @@ solver, target-curve fitting, independent checks, actual Muse tool calls and a
 
 ## Run, replay and reproduce
 
-From `C:\Users\LENOVO\meta_hack`, with the existing scientific Python environment:
+From the repository root, with the existing scientific Python environment:
 
 ```powershell
 python -m pip install -r requirements-behavior.txt

@@ -5,7 +5,7 @@ Source findings: research/problem_selection_evidence.json.
 Designer review: output/problem-selection-brief/designer-review.html.
 Scored live run: output/problem-selection-v2-live/.
 
-Offline verification, from C:\Users\LENOVO\meta_hack:
+Offline verification, from the repository root:
   python -m unittest discover -s tests -p test_problem_selection.py -v
   python -m problem_selection.study report --directory output/problem-selection-v2-live
   python research/audit_problem_selection.py

@@ -6,7 +6,7 @@
 - Read the supplied project handoff. Product implementation is deferred at the user's request until API availability is checked.
 - Added a standard-library API preflight for Meta and Baseten: text, prompted JSON, strict schema, real function calls with a deterministic tool result, and image understanding.
 - Added local credential configuration and ignored secrets and local API reports.
-- At initial inspection no successful authenticated inference had been established. Credits are user-reported: Meta $150; Baseten $100. Authenticated results below supersede the initial missing-key state.
+- At initial inspection no successful authenticated inference had been established. Personal credit-grant details are retained privately. Authenticated results below supersede the initial missing-key state.
 - Muse Image generation is excluded because Meta's current geographic policy explicitly lists India as restricted for that model. This restriction is distinct from image understanding.
 - Live unauthenticated network checks: both `api.meta.ai` and `inference.baseten.co` resolved and returned HTTP 401 for requests without keys. This verifies HTTPS reachability only, not successful inference or regional eligibility. The initial sandbox DNS failures disappeared when running the same checks outside the sandbox.
 - Verified script syntax and independently decoded the vision fixture's PNG dimensions, CRC checksums, and red/blue pixels. These local checks are not model capability results.

@@ -208,13 +208,13 @@ For CAD on a fresh checkout, create an isolated venv and install
 python research/prepare_print_geometry.py --study benchmarks/robust-discovery-v1 --method meta --candidate r028 --setting A --output output/custom-print-input.json
 research/vendor/cad-runtime/Scripts/python.exe -m fabrication_export output/custom-print-input.json --output output/custom-print-parts --thickness-mm 1.2
 research/vendor/cad-runtime/Scripts/python.exe -m fabrication_export output/custom-print-input.json --output output/custom-static-display --kind static-display --thickness-mm 1.2
-python research/build_discovery_board.py --destination C:/Users/LENOVO/.codex/visualizations/2026/10/27/01a17d16-9e76-7400-b87a-08dd7c219596/nonlinear-discovery-board.html
-python research/render_discovery_board.py
+python research/build_discovery_board.py --destination output/discovery-board/fragment.html
+python research/render_discovery_board.py --renderer PATH_TO_RENDER_SCRIPT
 python -m http.server 8767 --bind 127.0.0.1 --directory output/discovery-board
 ```
 
 The prebuilt board is standalone and bundles its plot library. The build helper's
-wrapper path is specific to this Codex installation. Source documents and figures:
+wrapper renderer is an optional external dependency; pass its render.py path explicitly. Source documents and figures:
 `output/robust-discovery/evidence.json`, `comparison.png/.svg`,
 `computed-states.png`, and each export's `manifest.json`, `source-geometry.json`,
 `README.txt`. CadQuery/Trimesh runtimes are ignored, not redistributed.
