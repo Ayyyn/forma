@@ -38,6 +38,7 @@ MODULES = (
     "test_motion_cache",
     "test_native_study",
     "test_component_exports",
+    "test_conversations",
 )
 
 
@@ -52,5 +53,13 @@ if __name__ == "__main__":
         ]
     )
     if result == 0:
-        result = subprocess.call(["node", "--test", "tests/test_motion_video.mjs", "tests/test_lazy_drawing.mjs"])
+        from pathlib import Path
+
+        result = subprocess.call(
+            [
+                "node",
+                "--test",
+                *[str(path) for path in sorted(Path("tests").glob("*.mjs"))],
+            ]
+        )
     raise SystemExit(result)

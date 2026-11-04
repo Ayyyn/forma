@@ -1,5 +1,5 @@
 // UI binds through a small host interface; the server owns component generation.
-export function componentLibrary({$,esc,state,api,toast,useSnapshot,refreshHistory,renderTree,renderInspector,setBusy,importFile,onMesh}) {
+export function componentLibrary({$,esc,state,api,toast,useSnapshot,refreshHistory,renderTree,renderInspector,setBusy,importFile,onMesh,placement=()=>({translation:[0,0,0],rotation:[0,0,0]})}) {
   let rows=[],chosen=null,editing=null,baseId=null;
   function choose(row,record=null) {
     chosen=row;
@@ -9,7 +9,8 @@ export function componentLibrary({$,esc,state,api,toast,useSnapshot,refreshHisto
       return `<label class="field-label">${esc(key[0].toUpperCase()+key.slice(1))}${spec.unit ? ` · ${esc(spec.unit)}` : ""}${spec.type==="choice"?`<select data-component-param="${esc(key)}">${spec.choices.map(v=>`<option ${v===value?"selected":""}>${esc(v)}</option>`).join("")}</select>`:`<input data-component-param="${esc(key)}" type="number" min="${spec.min}" max="${spec.max}" step="any" value="${value}">`}</label>`;
     }).join("");
     const feature=editing?state.document.features.find(f=>f.id===editing):null;
-    $("#component-placement").innerHTML=["translation","rotation"].map(key=>`<div class="field-label">${key==="translation"?"Position · mm":"Rotation · deg"}<span class="field-row three">${["X","Y","Z"].map((axis,i)=>`<label>${axis}<input data-component-pose="${key}" data-index="${i}" aria-label="Component ${key} ${axis}" type="number" step="any" value="${feature?.params?.[key]?.[i]??0}"></label>`).join("")}</span></div>`).join("");
+    const initial=feature?.params||placement();
+    $("#component-placement").innerHTML=["translation","rotation"].map(key=>`<div class="field-label">${key==="translation"?"Position · mm":"Rotation · deg"}<span class="field-row three">${["X","Y","Z"].map((axis,i)=>`<label>${axis}<input data-component-pose="${key}" data-index="${i}" aria-label="Component ${key} ${axis}" type="number" step="any" value="${initial[key]?.[i]??0}"></label>`).join("")}</span></div>`).join("");
     $("#component-scope").textContent=row.scope;
     const source=$("#component-source");source.replaceChildren();
     const link=document.createElement("a");link.href=row.source;link.target="_blank";link.rel="noopener";link.textContent="Source";

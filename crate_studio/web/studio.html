@@ -108,6 +108,10 @@
                 Create a primitive or draw a sketch to begin.
               </p>
             </div>
+            <div class="model-edit-toolbar">
+              <select id="edit-target" aria-label="Move or rotate target"><option value="selected">Selected body</option><option value="all">Whole model</option></select>
+              <button id="move-body">Move</button><button id="rotate-body">Rotate</button><button id="place-exact">Exact placement…</button><button id="edit-dimensions">Dimensions…</button><button id="hole-at-point">Hole at point</button><button id="component-at-point">Component at point</button><span id="edit-pick-status">Click a face to select a body</span>
+            </div>
             <div
               id="viewport"
               tabindex="0"
@@ -210,11 +214,13 @@
           </div>
           <div id="feedback-details" class="hidden"></div>
         </section>
-        <section class="studio-assistant">
+        <section class="studio-assistant agent-panel">
           <div class="assistant-heading">
             <strong><span>✳</span> Design with Meta</strong
             ><span id="agent-status">Ready</span>
           </div>
+          <div class="chat-toolbar"><span id="chat-storage">Project conversation</span><button id="chat-expand">Expand chat</button></div>
+          <div id="agent-history" role="log" aria-label="Project conversation"></div>
           <div id="agent-result" class="agent-result hidden"></div>
           <div class="agent-composer">
             <textarea
@@ -310,6 +316,15 @@
       accept=".step,.stp,.json"
       class="hidden"
     />
+    <dialog id="placement-dialog">
+      <form id="placement-form"><h2>Exact placement</h2><p id="placement-target" class="parameter-note"></p>
+        <div class="field-label">Move from current position · mm<div class="field-row three"><label>X<input name="tx" type="number" value="0" step="any" required></label><label>Y<input name="ty" type="number" value="0" step="any" required></label><label>Z<input name="tz" type="number" value="0" step="any" required></label></div></div>
+        <div class="field-label">Rotate around selection centre · degrees<div class="field-row three"><label>X<input name="rx" type="number" value="0" step="any" required></label><label>Y<input name="ry" type="number" value="0" step="any" required></label><label>Z<input name="rz" type="number" value="0" step="any" required></label></div></div>
+        <div class="dialog-actions"><button type="button" id="placement-cancel">Cancel</button><button type="submit" class="primary">Apply placement</button></div>
+      </form>
+    </dialog>
+    <dialog id="hole-point-dialog"><form id="hole-point-form"><h2>Hole at picked point</h2><p id="hole-point-location" class="parameter-note"></p><label class="field-label">Diameter · mm<input id="hole-point-diameter" type="number" value="4" min="0.1" max="1000" step="any" required></label><p class="parameter-note">Through the selected body, along the picked planar face normal.</p><div class="dialog-actions"><button id="hole-point-cancel" type="button">Cancel</button><button type="submit" class="primary">Create hole</button></div></form></dialog>
+    <dialog id="dimension-dialog"><h2>Edit feature dimensions</h2><p class="parameter-note">Choose the editable feature. Solid faces are generated from this history.</p><select id="dimension-feature" aria-label="Feature to edit"></select><div class="dialog-actions"><button id="dimension-cancel">Cancel</button><button id="dimension-open" class="primary">Open properties</button></div></dialog>
     <dialog id="print-settings-dialog">
       <form method="dialog">
         <h2>Prepare print pack</h2>

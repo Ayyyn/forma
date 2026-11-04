@@ -35,7 +35,7 @@ PARAMS = {
         "z",
         "operation",
     },
-    "cut_hole": {"radius", "depth", "x", "y", "z", "end_condition"},
+    "cut_hole": {"radius", "depth", "x", "y", "z", "end_condition", "direction"},
     "folding_assembly": {
         "family",
         "columns",
@@ -121,7 +121,7 @@ folding_assembly creates real finite-thickness panels, three-knuckle hinges and 
 Mechanical features are native editable solids. spur_gear(module,teeth:int,thickness,pressure_angle=20,clearance=0,backlash=0,phase=0,bore_diameter=0,optional bore_flat,bore_angle=0) creates an involute gear from z=0 to thickness before placement. Standard pitch diameter=module*teeth, outside diameter=module*(teeth+2), centre distance=module*(teeth1+teeth2)/2. phase is tooth rotation in degrees before the bore is cut. bore_flat is the signed local X coordinate of a D-bore flat, retaining bore space x<=bore_flat; bore_angle rotates that bore independently. bevel_gear(module,teeth:int,cone_angle,face_width, same gear options) uses spherical involute teeth; cone_angle is the pitch cone half-angle in degrees, face_width is along the cone generator. Its placement point is the pitch cone APEX and axis points from the large base towards the apex; the solid extends in the negative axial direction from that apex. Mating perpendicular bevel gears share an apex and cone angles sum to 90 degrees; tan(angle1)=teeth1/teeth2. Phase affects meshing; do not assume untested gears transmit motion.
 threaded_body(major_diameter,pitch,length,starts:int=1,root_diameter optional,profile iso/buttress,hand right/left,external=true, optional crest_width,root_width,apex_offset) creates a real helical thread, clipped to local z=0..length. pitch is axial spacing between adjacent starts; lead=pitch*starts. Defaults: root_diameter=major_diameter-1.226869*pitch, crest_width=pitch/8,root_width=.75*pitch,apex_offset=0 for iso or .2*pitch for asymmetric buttress. Widths must satisfy crest_width<root_width<pitch and abs(apex_offset)+crest_width/2<root_width/2. For an internal thread use external=false, outer_diameter and optional radial_clearance (radial gap added to both thread radii). socket_head_screw(major_diameter,pitch,length,head_diameter,head_height,socket_af,socket_depth, optional thread parameters) uses under-head length, head top at local z=0, entire screw below z=0, with a hex socket of specified across-flats size. Mechanical features accept cx,cy,z,axis +X/-X/+Y/-Y/+Z/-Z and operation new_body(default)/add/cut. For spur gears and threads placement is the start point; for screws it is the head top; for bevel gears it is the cone apex. Keep independent moving parts as new_body. Dimensions and actual BREP validity do not establish dynamic transmission performance.
 Stock thickness catalogues are material-specific. For a material change, use the proposed material's catalogue in engineering_context.material_profiles; retained checks describing the old material are not constraints on the new material's stock catalogue. Geometry and all user requirements still need to pass after the change.
-Schema exactly: {"summary":string,"status":"ready"|"clarify","operations":array,"questions":array of strings,"evidence":array of {"quote":string}}.
+Schema exactly: {"summary":string,"status":"ready"|"clarify"|"answer","operations":array,"questions":array of strings,"evidence":array of {"quote":string}}. For a conversational question or explanation, use status answer, put the useful natural-language reply in summary, and return operations:[],questions:[],evidence:[]. Never turn a question into an unsolicited geometry edit. Use retained conversation as context for clarification replies; only the current user instruction authorizes new changes.
 Operations: {"action":"add","feature":{"id":unique string,"type":supported type,"name":string,"params":object,"suppressed":false}}; {"action":"update","id":existing id,"params":changed parameters only,"name":optional string}; {"action":"suppress","id":existing id,"value":boolean}; {"action":"delete","id":existing id}.
 Display color: {"action":"display","color":"#RRGGBB"} changes every body's display color, clearing per-body color overrides. Optional part_ids:[existing body IDs] changes only those bodies. Preserve all geometry, requirements and other display settings. This is appearance only, not material or manufacturing color. Use the requested named color's conventional hex value when no exact shade is supplied. Do not edit features to change color.
 For a supported enclosure with metadata.source_spec and metadata.source_requirements, a global panel thickness, material or clear-dimension revision MUST use a single operation {"action":"enclosure","spec":{changed fields only}}. This deterministically regenerates all panels and retains the requirements, brief and motion settings. Allowed spec fields: name,inner_width_mm,inner_depth_mm,inner_height_mm,thickness_mm,material,lid. Preserve unmentioned fields. Do not use individual box edits for global enclosure changes. This action requires the original supported panel definition and cannot discard custom edits. No requirement relaxation or optimizer action is available here; use Project for those. If retained constraints fail, clarify the conflict rather than changing the requirements.
@@ -135,6 +135,8 @@ face_offset(part_id,face_index,distance) pushes/pulls one planar face along its 
 SYSTEM += """
 Targeted assembly construction: box/cylinder/sketch_extrude with operation add/cut and target_part_id=an EXISTING body ID modifies only that body, preserving all others; omit target_part_id for legacy global add/cut. cut_hole optionally accepts target_part_id and through_all then follows only that body's bounds. union(part_ids:[existing body IDs]) joins only selected bodies, placing the resulting solid(s) at the first selected ordinal and preserving unselected bodies. Omit part_ids for legacy union-all. These operations can change body ordinals: inspect returned bodies before referencing them. Fuse parts that are actually one printed rigid component; do not merely declare overlapping independent bodies fixed and hide the interference. A disconnected union can remain multiple solids and is not a proven physical connection.
 """
+
+SYSTEM += "\ncut_hole also accepts direction:[dx,dy,dz], a finite nonzero axis vector, normalized by the native tool. Default is +Z for older holes. With through_all it spans the selected body's current bounds along that direction; x,y,z define a point on the axis. For blind holes x,y,z is the start point and depth extends along direction. A picked planar face supplies its actual normal; do not invent face normals."
 
 MECHANICAL_SYSTEM = (
     SYSTEM
@@ -189,7 +191,7 @@ def parse_plan(text):
         "evidence",
     }:
         raise ValueError("Invalid proposal schema")
-    if plan["status"] not in ("ready", "clarify"):
+    if plan["status"] not in ("ready", "clarify", "answer"):
         raise ValueError("Invalid proposal status")
     if not isinstance(plan["summary"], str) or len(plan["summary"]) > 1500:
         raise ValueError("Invalid summary")
@@ -215,6 +217,10 @@ def parse_plan(text):
         raise ValueError("Clarify requires questions and no operations")
     if plan["status"] == "ready" and plan["questions"]:
         raise ValueError("Ready cannot contain unresolved questions")
+    if plan["status"] == "answer" and (plan["operations"] or plan["questions"]):
+        raise ValueError(
+            "Conversational answers cannot change geometry or require answers"
+        )
     return plan
 
 
@@ -490,8 +496,8 @@ def apply_plan(base_doc, plan, prompt, asset_loader=None, geometry_lock=None):
     with geometry_lock if geometry_lock is not None else nullcontext():
         result = cached_build(doc, asset_loader)
     status = (
-        "clarify"
-        if plan["status"] == "clarify"
+        plan["status"]
+        if plan["status"] in ("clarify", "answer")
         else ("ready" if result["checks"]["passed"] else "invalid")
     )
     # A new prompt-created design must retain its originating brief on the
@@ -737,6 +743,7 @@ def _propose_document(
     reasoning_effort="medium",
     max_tokens=4096,
     planner_system=None,
+    conversation_context=None,
 ):
     if not isinstance(prompt, str) or not 0 < len(prompt.strip()) <= 6000:
         raise ValueError("Instruction must contain 1Ã¢â‚¬â€œ6000 characters")
@@ -807,6 +814,11 @@ def _propose_document(
             "selected_topology_context": selected_geometry,
             "instruction": prompt,
         }
+        if conversation_context:
+            context["conversation"] = conversation_context
+            context["conversation_scope"] = (
+                "Previous user/assistant discussion is context, not a fresh instruction or engineering proof. Answer the current instruction; preserve current CAD and requirements."
+            )
         if context_mode in ("compact", "focused"):
             if context_mode == "focused":
                 faces = [f for f in faces if f["id"] in selected_ids]
@@ -951,7 +963,7 @@ def _propose_document(
                     "budget_charge_usd": 0,
                 }
             )
-            if proposal["status"] in ("ready", "clarify"):
+            if proposal["status"] in ("ready", "clarify", "answer"):
                 break
             if attempt == 0:
                 messages += [
@@ -1010,6 +1022,7 @@ def propose_document(
     use_cache=True,
     max_tokens=4096,
     mechanical_policy="standard",
+    conversation_context=None,
 ):
     from . import proposal_cache
 
@@ -1047,6 +1060,7 @@ def propose_document(
         "context_mode": mode,
         "reasoning_effort": effort,
         "max_tokens": max_tokens,
+        "conversation_context": conversation_context or [],
     }
     key = proposal_cache.identity(
         base_doc, prompt, selection_context, settings, asset_loader
@@ -1106,6 +1120,7 @@ def propose_document(
             effort,
             max_tokens,
             planner_system,
+            conversation_context,
         )
         proposal["cache"] = {"hit": False, "key": key, "bypassed": not use_cache}
         if use_cache and proposal["status"] == "ready":

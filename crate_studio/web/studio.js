@@ -6,6 +6,10 @@ import { drawingRequest } from "/assets/drawing_request.js";
 import { displayChecks } from "/assets/review_display.mjs";
 import { referenceSegments, savedSketchCount } from "/assets/sketch_reference.mjs";
 import { selectedSketch, sketchKeyCommand } from "/assets/sketch_actions.mjs";
+import { pivotTranslation } from "/assets/manual_geometry.mjs";
+import { conversationUI } from "/assets/conversation.js";
+let chatUI, pointAction=null, pickedHole=null, placementSelection=null;
+let modelViewFitted=false;
 let sectionUI;
 let sketchReferenceKey = null, sketchReferenceLines = [], sketchFitKey = null;
 let workflow;
@@ -172,10 +176,11 @@ const definitions = {
   cut_hole: {
     label: "Hole",
     icon: "⊙",
-    params: { radius: 8, depth: 60, x: 0, y: 0, z: -10, end_condition: "through_all" },
+    params: { radius: 8, depth: 60, x: 0, y: 0, z: -10, end_condition: "through_all", direction:[0,0,1] },
     fields: [
       ["radius", "Radius", "number"],
       ["end_condition", "End condition", "select", ["blind", "through_all"]],
+      ["direction", "Drill direction", "vector"],
       ["depth", "Depth", "number"],
       ["x", "Center X", "number"],
       ["y", "Center Y", "number"],
@@ -392,12 +397,14 @@ function useSnapshot(value) {
   if (!state.document.features.some((f) => f.id === state.feature))
     state.feature = null;
   state.selection = [];
+  $('#edit-pick-status').textContent='Click a face to select a body';
   renderAll();
   $("#selection-message").textContent = state.document.features.find(f => f.id === state.feature)?.name || "Nothing selected";
   renderConfigurations();
   if (s.id) updateDocumentUrl();
   if (state.measure) renderMeasurement();
   workflow?.update(s);
+  chatUI?.refresh();
 }
 
 function renderAll() {
@@ -491,6 +498,8 @@ function renderInspector() {
 
   const def = { ...(definitions[f.type] || { label: f.type, fields: [] }) };
   def.fields = [...def.fields];
+  if(f.params.cx===undefined&&f.params.x!==undefined)def.params={...def.params,cx:f.params.x};
+  if(f.params.cy===undefined&&f.params.y!==undefined)def.params={...def.params,cy:f.params.y};
   if (["box", "cylinder", "sketch_extrude", "cut_hole"].includes(f.type))
     def.fields.push(["target_part_id", "Target body (blank = all)", "optional-text"]);
   if (["union", "boolean_union"].includes(f.type))
@@ -505,7 +514,7 @@ function renderInspector() {
       if (key==="count" && ["miura","cube_net"].includes(family)) return false;
       if (key==="panel_height" && family==="cube_net") return false;
     }
-    if (f.type === "cut_hole" && f.params.end_condition === "through_all" && ["depth", "z"].includes(key))
+    if (f.type === "cut_hole" && f.params.end_condition === "through_all" && (key==='depth'||(key==='z'&&(!f.params.direction||(!f.params.direction[0]&&!f.params.direction[1])))))
       return false;
     if (
       ["fillet", "chamfer"].includes(f.type) &&
@@ -525,6 +534,9 @@ function renderInspector() {
     selected +
     `<div class="section-title">${esc(def.label.toUpperCase())}<span>${esc(f.id.slice(-6))}</span></div><label class="field-label">Feature name<input id="feature-name" value="${esc(f.name || def.label)}" maxlength="100"></label><p class="feature-meta">Feature ${state.document.features.indexOf(f) + 1} of ${state.document.features.length}${f.suppressed ? " · Suppressed" : ""}</p><form id="feature-form">${fields.map((field) => fieldHTML(field, { ...def.params, ...f.params })).join("")}${f.params.edge_indices ? `<p class="parameter-note">${f.params.edge_indices.length} selected edge(s) on ${esc(f.params.part_id)}. References follow this feature history.</p>` : ""}${scope[f.type] ? `<p class="parameter-note">${esc(scope[f.type])}</p>` : ""}<label class="field-check"><input id="feature-suppressed" type="checkbox" ${f.suppressed ? "checked" : ""}> Suppress feature</label><div class="inspector-actions"><button id="update-feature" type="submit" class="primary">Update feature</button><button type="button" id="delete-feature" class="danger" title="Delete feature">×</button></div><div class="feature-order"><button type="button" id="move-feature-up" ${state.document.features.indexOf(f) === 0 ? "disabled" : ""}>↑ Move up</button><button type="button" id="move-feature-down" ${state.document.features.indexOf(f) === state.document.features.length - 1 ? "disabled" : ""}>↓ Move down</button></div><button type="button" id="discard-edits" class="discard-button">Discard parameter edits</button></form>`;
 
+  $('#feature-name').dataset.initialValue=$('#feature-name').value;
+  $('#feature-name').addEventListener('input',()=>{state.inspectorDirty=true;$('#document-state').textContent='Parameter edits · update feature to save';});
+  $('#feature-form').querySelectorAll('input,select,textarea').forEach(el=>{el.dataset.initialValue=el.type==='checkbox'?String(el.checked):el.value;});
   $("#feature-form").addEventListener("input", () => {
     state.inspectorDirty = true;
     $("#document-state").textContent =
@@ -563,7 +575,7 @@ function renderInspector() {
 }
 
 function fieldHTML([key, label, type, options], params) {
-  const value = params[key];
+  const value = params[key] ?? (key==='direction'?[0,0,1]:undefined);
   const optional = type === "optional-number";
   if (optional) type = "number";
   const unit =
@@ -599,9 +611,10 @@ function fieldHTML([key, label, type, options], params) {
 }
 
 function readFeatureForm(f) {
-  f.name =
-    $("#feature-name")?.value.trim() || definitions[f.type]?.label || f.type;
+  if($('#feature-name').value!==$('#feature-name').dataset.initialValue)
+    f.name = $("#feature-name")?.value.trim() || definitions[f.type]?.label || f.type;
   $$("[data-param]").forEach((el) => {
+    if(el.value===el.dataset.initialValue)return;
     const type = el.dataset.type;
     if (type === "readonly") return;
     if (type === "optional-number" && el.value === "") { delete f.params[el.dataset.param]; return; }
@@ -621,10 +634,12 @@ function readFeatureForm(f) {
               : el.value;
   });
   $$("[data-vector]").forEach((el) => {
-    f.params[el.dataset.vector] ||= [0, 0, 0];
-    f.params[el.dataset.vector][Number(el.dataset.index)] = Number(el.value);
+    if(el.value===el.dataset.initialValue)return;
+    const key=el.dataset.vector;
+    f.params[key]=[...$('#feature-form').querySelectorAll('[data-vector]')].filter(input=>input.dataset.vector===key).sort((a,b)=>Number(a.dataset.index)-Number(b.dataset.index)).map(input=>Number(input.value));
   });
-  f.suppressed = $("#feature-suppressed")?.checked || false;
+  if(String($('#feature-suppressed').checked)!==$('#feature-suppressed').dataset.initialValue)
+    f.suppressed = $('#feature-suppressed').checked;
   cleanParams(f);
 }
 
@@ -1097,7 +1112,7 @@ async function setupGizmo() {
     gizmo = new TransformControls(camera, renderer.domElement);
     gizmo.setMode("translate");
     gizmo.setSpace("world");
-    gizmo.setSize(0.8);
+    gizmo.setSize(1.2);
     gizmoPivot = new THREE.Object3D();
     scene.add(gizmoPivot, gizmo.getHelper());
     gizmo.addEventListener("dragging-changed", (e) => {
@@ -1109,53 +1124,52 @@ async function setupGizmo() {
     });
     gizmo.addEventListener("objectChange", () => {
       if (!gizmoDragging || !gizmoStart || !gizmoBody) return;
-      const delta = gizmoPivot.position.clone().sub(gizmoStart);
-      [...meshes, ...faces, ...pickEdges]
-        .filter((m) => (m.userData.part_id || m.userData.id) === gizmoBody)
-        .forEach((m) => m.position.copy(delta));
+      const {translation}=gizmoParameters();
+      transformMeshes().forEach(m=>{m.position.set(translation[0],translation[2],-translation[1]);m.quaternion.copy(gizmoPivot.quaternion);});
     });
     gizmo.addEventListener("mouseUp", async () => {
       if (!gizmoStart || !gizmoBody) return;
-      const delta = gizmoPivot.position.clone().sub(gizmoStart),
-        body = gizmoBody;
-      [...meshes, ...faces, ...pickEdges]
-        .filter((m) => (m.userData.part_id || m.userData.id) === body)
-        .forEach((m) => m.position.set(0, 0, 0));
+      const params=gizmoParameters(), body=gizmoBody;
+      transformMeshes().forEach(m=>{m.position.set(0,0,0);m.quaternion.identity();});
       gizmoStart = null;
       gizmo.detach();
-      if (delta.length() > 0.001) {
-        const translation = [delta.x, -delta.z, delta.y].map(
-          (v) => Math.round(v * 1000) / 1000,
-        );
-        await addFeature("transform", {
-          target_part_id: body,
-          translation,
-          rotation: [0, 0, 0],
-        });
+      if ([...params.translation,...params.rotation].some(v=>Math.abs(v)>0.00001)) {
+        await addFeature("transform", {...params,...(body==='all'?{}:{target_part_id:body})});
       }
     });
   } catch (e) {
     console.warn("Translation handles unavailable:", e.message);
   }
 }
-function translateSelected() {
+function transformMeshes(){return [...meshes,...faces,...pickEdges].filter(m=>gizmoBody==='all'||(m.userData.part_id||m.userData.id)===gizmoBody);}
+function gizmoParameters(){
+  const shift=gizmoPivot.position.clone().sub(gizmoStart), q=gizmoPivot.quaternion;
+  const e=new THREE.Euler().setFromQuaternion(new THREE.Quaternion(q.x,-q.z,q.y,q.w),'ZYX');
+  const rotation=[e.x,e.y,e.z].map(v=>v*180/Math.PI);
+  return {rotation,translation:pivotTranslation([gizmoStart.x,-gizmoStart.z,gizmoStart.y],[shift.x,-shift.z,shift.y],rotation)};
+}
+function activePlacement(){
+  const id=$('#edit-target').value==='all'?'all':state.selection.at(-1)?.part_id;
+  const mesh=meshes.find(m=>m.userData.id===id);
+  if(id==='all'&&meshes.length){const b=state.snapshot.metrics.bounds_mm;return {id,pivot:b[0].map((v,i)=>(v+b[1][i])/2)};}
+  if(!mesh){toast('Click a face to select a body, or choose Whole model.',true);return null;}
+  mesh.geometry.computeBoundingBox();const c=mesh.geometry.boundingBox.getCenter(new THREE.Vector3());
+  return {id,pivot:[c.x,-c.z,c.y]};
+}
+function translateSelected(mode='translate') {
   if (!gizmo || state.busy) return;
   if (state.inspectorDirty || state.pending) {
     toast("Update or discard parameter edits before moving a body.", true);
     return;
   }
-  const id = state.selection.at(-1)?.part_id || state.selection.at(-1)?.id,
-    mesh = meshes.find((m) => m.userData.id === id);
-  if (!mesh) return;
-  mesh.geometry.computeBoundingBox();
-  gizmoPivot.position.copy(
-    mesh.geometry.boundingBox.getCenter(new THREE.Vector3()),
-  );
-  gizmoBody = id;
+  const target=activePlacement();if(!target)return;
+  gizmo.setMode(mode==='rotate'?'rotate':'translate');gizmoPivot.quaternion.identity();
+  gizmoPivot.position.set(target.pivot[0],target.pivot[2],-target.pivot[1]);
+  gizmoBody = target.id;
   gizmoStart = null;
   gizmo.attach(gizmoPivot);
   closeDrawers();
-  status("Drag a translation handle · release to save an editable transform");
+  status(mode==='rotate'?'Drag a rotation ring · release to save · Esc cancels':'Drag an axis arrow · release to save · Esc cancels');
 }
 
 function renderGeometry() {
@@ -1235,7 +1249,7 @@ function renderGeometry() {
   grid.position.y = Math.min(0, b[0][2]) - 0.02;
   grid.visible = $("#show-grid").checked;
   scene.add(grid);
-  fitView();
+  if(!modelViewFitted&&meshes.length){fitView();modelViewFitted=true;}
 }
 
 function resize3D() {
@@ -1316,6 +1330,16 @@ function pickGeometry(e) {
     point: [hit.point.x, -hit.point.z, hit.point.y],
     kind: edgeMode ? "edge" : faces.length ? "face" : "body",
   };
+  if(pointAction){
+    if(state.busy||state.inspectorDirty||state.agentPreview){toast('Save or discard pending edits first.',true);return;}
+    state.selection=[item];highlightSelection();renderInspector();
+    const action=pointAction;pointAction=null;
+    $('#edit-pick-status').textContent=`${item.part_id} · ${item.point.map(v=>fmt(v)).join(', ')} mm`;
+    if(String(item.geom_type||'').toUpperCase()!=='PLANE'||!item.normal){toast('Choose a planar face for normal-aligned placement.',true);return;}
+    if(action==='hole'){pickedHole={...item,revision:state.snapshot.id};$('#hole-point-location').textContent=`${item.part_id} · X ${fmt(item.point[0])}, Y ${fmt(item.point[1])}, Z ${fmt(item.point[2])} mm`;$('#hole-point-dialog').showModal();}
+    else openComponentLibrary().catch(e=>toast(e.message,true));
+    return;
+  }
   if (e.ctrlKey || e.metaKey || state.measure) {
     state.selection.push(item);
     state.selection = state.selection.slice(-2);
@@ -1323,6 +1347,7 @@ function pickGeometry(e) {
   highlightSelection();
   renderInspector();
   $("#selection-message").textContent = `${item.kind} · ${item.id}`;
+  $('#edit-pick-status').textContent=`${item.part_id} selected · Properties to edit features`;
   if (state.measure) renderMeasurement();
 }
 
@@ -1372,7 +1397,7 @@ function wireSelection() {
       distance,
     });
   });
-  $("#translate-selected")?.addEventListener("click", translateSelected);
+  $("#translate-selected")?.addEventListener("click", ()=>translateSelected());
   $("#clear-selection")?.addEventListener("click", () => {
     state.selection = [];
     highlightSelection();
@@ -1966,10 +1991,12 @@ async function sendAgent(regenerate = false, resumeFrom = null) {
         regenerate: regenerate === true,
         agent_mode: $("#agent-mode").value,
         resume_from: resumeFrom,
+        message_id: crypto.randomUUID(),
       },
       30000,
     );
     state.agentJob = job.id;
+    chatUI?.refresh();
     {const url=new URL(location.href);url.searchParams.delete('checkpoint');history.replaceState(null,'',url.pathname+url.search);}
     await pollAgent(job.id);
   } catch (e) {
@@ -2024,6 +2051,7 @@ async function pollAgent(id) {
     }
     if (job.status === "completed") {
       renderAgent(job);
+      chatUI?.refresh();
       if ($("#live-design-dialog").open) $("#live-design-dialog").querySelector("strong").textContent = job.proposal?.status === "ready" ? "Proposal ready for review" : "Drafts retained · work incomplete";
       return;
     }
@@ -2108,6 +2136,7 @@ function renderAgent(job) {
   $("#agent-status").textContent =
     p.status === "ready"
       ? "Review proposal"
+      : p.status === "answer" ? "Reply"
       : p.status === "clarify"
         ? "Clarification needed"
         : p.status === "incomplete"
@@ -2153,7 +2182,7 @@ function renderAgent(job) {
     setTab("model");
   });
   $("#agent-apply")?.addEventListener("click", applyAgent);
-  $("#agent-regenerate").addEventListener("click", () => {
+  $("#agent-regenerate")?.addEventListener("click", () => {
     if (state.agentPreview) { useSnapshot(state.agentBase); state.agentPreview = false; }
     if (!agentStillCurrent()) { toast("The workspace changed. Request a proposal for the active version.", true); return; }
     sendAgent(true);
@@ -2166,6 +2195,11 @@ function renderAgent(job) {
       `${p.model || "Meta"} · Proposal dismissed`;
     $("#save-document").textContent = "Save version";
   });
+  if(p.status==='clarify'||p.status==='answer'){
+    $('#agent-prompt').value='';$('#agent-prompt').placeholder='Reply to Muse…';
+    $('#agent-regenerate')?.remove();$('#agent-dismiss')?.remove();
+    $('#agent-result .agent-actions')?.remove();
+  }
 }
 async function applyAgent() {
   if (state.agentApplying || !agentStillCurrent()) {
@@ -2402,6 +2436,9 @@ $("#document-name").addEventListener("change", (e) => {
 });
 $("#new-document").addEventListener("click", async () => {
   if (state.busy) return;
+  if(state.agentBusy){toast('Wait for the current request before starting a new design.',true);return;}
+  state.agentProposal=null;state.agentJob=null;state.agentBase=null;$('#agent-result').classList.add('hidden');$('#agent-history').replaceChildren();$('#agent-prompt').value='';$('#agent-status').textContent='Ready';
+  modelViewFitted=false;
   state.document = {
     name: "Untitled design",
     features: [],
@@ -2500,6 +2537,9 @@ $("#sketch-delete").addEventListener("click",()=>{
 $("#snap-step").addEventListener("change", drawSketch);
 document.addEventListener("keydown", (e) => {
   const text = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable;
+  if(e.key==='Escape'&&!text&&(gizmoBody||pointAction)){
+    pointAction=null;transformMeshes().forEach(m=>{m.position.set(0,0,0);m.quaternion.identity();});gizmoStart=null;gizmoBody=null;gizmo?.detach();if(controls)controls.enabled=true;$('#edit-pick-status').textContent='Placement cancelled';return;
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !text) {
     e.preventDefault();
     undoRedo(e.shiftKey ? "redo" : "undo");
@@ -2639,8 +2679,48 @@ workflow = createWorkflow({
   },
 });
 const openComponentLibrary=componentLibrary({$,esc,state,api,toast,useSnapshot,refreshHistory,renderTree,renderInspector,setBusy,importFile,
+  placement:()=>{
+    const pick=state.selection.at(-1);let rotation=[0,0,0];
+    if(pick?.normal&&THREE){const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(...pick.normal).normalize());const e=new THREE.Euler().setFromQuaternion(q,'ZYX');rotation=[e.x,e.y,e.z].map(v=>v*180/Math.PI);}
+    return {translation:pick?.point||[0,0,0],rotation};
+  },
   onMesh:file=>{pendingMeshFile=file;pendingMeshComponent=true;$("#mesh-import-filename").textContent=file.name+" · confirm its original units";$("#mesh-import-dialog").showModal();}
 });
 $("#component-library").onclick=()=>openComponentLibrary().catch(e=>toast(e.message,true));
 sectionUI=drawingSections({$,esc,state,api,toast,clone,commitDocument,renderDrawing});
+chatUI=conversationUI({$,esc,state,api,openProposal:async(id,prompt)=>{
+  if(state.busy||state.agentBusy||state.pending||state.inspectorDirty||state.agentPreview)return;
+  try{const job=await api('/jobs/'+encodeURIComponent(id));if(job.document_id!==state.snapshot.id){toast('Open the proposal source revision before applying it.',true);return;}state.agentBase=clone(state.snapshot);state.agentJob=id;state.agentInstruction=prompt;$('#agent-prompt').value=prompt;renderAgent(job);chatUI.refresh();}catch(error){toast(error.message,true);}
+}});
+$('#move-body').onclick=()=>translateSelected('translate');
+$('#rotate-body').onclick=()=>translateSelected('rotate');
+$('#place-exact').onclick=()=>{
+  if(state.busy||state.inspectorDirty||state.agentPreview){toast('Save or discard pending edits first.',true);return;}
+  placementSelection=activePlacement();if(!placementSelection)return;
+  placementSelection.revision=state.snapshot.id;$('#placement-form').reset();$('#placement-target').textContent=placementSelection.id==='all'?'Whole model':'Body '+placementSelection.id;$('#placement-dialog').showModal();
+};
+$('#placement-cancel').onclick=()=>$('#placement-dialog').close();
+$('#placement-form').onsubmit=async event=>{
+  event.preventDefault();if(!placementSelection||placementSelection.revision!==state.snapshot.id){toast('The model changed; reopen placement.',true);return;}
+  const values=[...$('#placement-form').querySelectorAll('input')].map(input=>Number(input.value));if(!values.every(Number.isFinite))return;
+  const rotation=values.slice(3),translation=pivotTranslation(placementSelection.pivot,values.slice(0,3),rotation);
+  $('#placement-dialog').close();await addFeature('transform',{translation,rotation,...(placementSelection.id==='all'?{}:{target_part_id:placementSelection.id})});
+};
+for(const [id,action] of [['hole-at-point','hole'],['component-at-point','component']])$("#"+id).onclick=()=>{
+  if(state.busy||state.inspectorDirty||state.agentPreview){toast('Save or discard pending edits first.',true);return;}
+  $('#selection-mode').value='faces';pointAction=action;$('#edit-pick-status').textContent=`Click a planar face to place ${action==='hole'?'a hole':'a component'} · Esc cancels`;
+};
+$('#hole-point-cancel').onclick=()=>$('#hole-point-dialog').close();
+$('#hole-point-form').onsubmit=async event=>{
+  event.preventDefault();if(!pickedHole||pickedHole.revision!==state.snapshot.id){toast('The model changed; pick the point again.',true);return;}
+  const radius=Number($('#hole-point-diameter').value)/2;if(!Number.isFinite(radius)||radius<=0)return;
+  const [x,y,z]=pickedHole.point;$('#hole-point-dialog').close();await addFeature('cut_hole',{x,y,z,radius,direction:pickedHole.normal.map(v=>-v),target_part_id:pickedHole.part_id,end_condition:'through_all'});
+};
+$('#edit-dimensions').onclick=()=>{
+  if(state.inspectorDirty){toast('Update or discard pending parameter edits first.',true);return;}
+  $('#dimension-feature').innerHTML=state.document.features.map(f=>`<option value="${esc(f.id)}" ${f.id===state.feature?'selected':''}>${esc(f.name||f.type)}</option>`).join('');
+  if(!state.document.features.length){toast('Create or import a model first.',true);return;}$('#dimension-dialog').showModal();
+};
+$('#dimension-cancel').onclick=()=>$('#dimension-dialog').close();
+$('#dimension-open').onclick=()=>{selectFeature($('#dimension-feature').value);$('#dimension-dialog').close();closeDrawers();$('.inspector').classList.add('drawer-open');$('#drawer-backdrop').classList.remove('hidden');};
 start();

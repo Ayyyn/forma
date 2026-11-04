@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import itertools
 from copy import deepcopy
 from pathlib import Path
 
@@ -235,6 +236,36 @@ def _apply(kind, p, shapes, asset_loader):
         if target is not None and target not in ids:
             raise ValueError("target_part_id must identify an existing body")
         body = shapes[ids.index(target)] if target is not None else _union(shapes)
+        if "direction" in p:
+            direction = _vector(p, "direction", (0, 0, 1))
+            length = math.sqrt(sum(v * v for v in direction))
+            if length < 1e-9:
+                raise ValueError("Hole direction must be nonzero")
+            direction = tuple(v / length for v in direction)
+            point = tuple(_number(p, k, 0) for k in ("x", "y", "z"))
+            if end_condition == "through_all":
+                lo, hi = _bounds(body)
+                projections = [
+                    sum((corner[i] - point[i]) * direction[i] for i in range(3))
+                    for corner in itertools.product(*zip(lo, hi))
+                ]
+                start, end = min(projections) - 1, max(projections) + 1
+                origin = tuple(point[i] + start * direction[i] for i in range(3))
+                depth = end - start
+            else:
+                origin, depth = point, _number(p, "depth", positive=True)
+            tool = cq.Solid.makeCylinder(
+                _number(p, "radius", positive=True),
+                depth,
+                cq.Vector(*origin),
+                cq.Vector(*direction),
+            )
+            changed = _subtract(body, tool)
+            return (
+                shapes[: ids.index(target)] + changed + shapes[ids.index(target) + 1 :]
+                if target is not None
+                else changed
+            )
         if end_condition == "through_all":
             lo, hi = _bounds(body)
             start, depth = lo[2] - 1, hi[2] - lo[2] + 2

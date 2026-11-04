@@ -1603,5 +1603,14 @@ dialog h2 {
 #component-source {overflow-wrap:anywhere;}
 @media(max-width:650px){.component-layout{grid-template-columns:1fr}.component-layout aside{border:0;padding:0}#component-list{max-height:160px}}
 #section-dialog {width:min(440px,94vw);padding:24px;}
+.model-edit-toolbar{position:absolute;z-index:3;top:8px;left:12px;right:12px;display:flex;align-items:center;gap:5px;overflow-x:auto;white-space:nowrap;padding:5px;background:#fffffff2;border:1px solid #d4dce4;border-radius:6px}
+.model-edit-toolbar button,.model-edit-toolbar select{font:11px var(--sans,Arial);padding:6px 8px;border:1px solid #ccd4dd;border-radius:4px;background:#fff;color:#30445a}
+#edit-pick-status{font-size:10px;color:#53677b;padding:0 5px}.stage-caption{top:66px}
+#placement-dialog,#hole-point-dialog,#dimension-dialog{width:min(480px,94vw);padding:24px}
+#dimension-feature{width:100%;padding:9px;margin:10px 0}.chat-toolbar{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#627387;margin-bottom:5px}.chat-toolbar button{border:0;background:none;font-size:10px;color:#405b81}
+#agent-history{max-height:175px;overflow:auto;overscroll-behavior:contain}.chat-message{font-size:12px;line-height:1.5;white-space:pre-wrap;margin:8px 0;padding:10px 12px;background:#f3f5f8;border-radius:8px;color:#243b50}.chat-message.user{background:#eaf0ff;margin-left:12%}.chat-message small{display:block;font-weight:600;color:#546880;margin-bottom:4px}.chat-questions p{margin:5px 0}
+.agent-panel.chat-expanded #agent-history{max-height:40vh}.agent-panel.chat-expanded{max-height:75vh;overflow:auto}.agent-composer textarea{min-height:42px;max-height:150px}
+#model-tab .view-switch{top:57px}#model-tab .stage-caption{top:57px}#model-tab .stage-caption h1{font-size:16px;max-width:65%}
+.studio-assistant{display:flex;flex-direction:column;max-height:45%;overflow:hidden}.studio-assistant .assistant-heading,.studio-assistant .chat-toolbar,.studio-assistant .agent-composer,.studio-assistant .agent-footer{flex-shrink:0}#agent-history{flex:1 1 auto;min-height:0}.studio-assistant .agent-result{max-height:140px;min-height:0;overflow:auto;flex:0 1 auto}.agent-panel.chat-expanded{overflow:hidden}
 #drawing-page {max-width:220px;padding:7px;border:1px solid #d5d2cb;border-radius:5px;background:#fffdf9;color:inherit;font:inherit;}
 .drawing-actions {flex-wrap:wrap;gap:6px;}

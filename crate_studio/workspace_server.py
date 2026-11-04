@@ -753,10 +753,18 @@ class PromptBody(BaseModel):
     regenerate: bool = False
     agent_mode: Literal["standard", "tools"] = "standard"
     resume_from: str | None = Field(default=None, max_length=80)
+    message_id: str | None = Field(default=None, max_length=80)
 
 
 def create_router(cad_lock, crate_reader=None):
     router = APIRouter(prefix="/api/studio")
+    from .conversations import Conversations
+
+    chat = Conversations(DATA / "conversations.sqlite3", DOCS)
+
+    @router.get("/conversation/{document_id}")
+    def conversation(document_id: str):
+        return chat.read(valid_id(document_id))
 
     @router.get("/bootstrap")
     def bootstrap(
@@ -1346,6 +1354,7 @@ def create_router(cad_lock, crate_reader=None):
                     "selected_feature_id": body.selected_feature_id,
                     "agent_mode": body.agent_mode,
                     "resume_from": body.resume_from,
+                    "message_id": body.message_id,
                 },
                 sort_keys=True,
                 allow_nan=False,
@@ -1398,6 +1407,9 @@ def create_router(cad_lock, crate_reader=None):
         def work():
             try:
                 JOBS[id]["status"] = "running"
+                chat.save_job(JOBS[id])
+                prior_conversation = chat.context(body.document_id)
+                chat.append(body.document_id, id, "user", {"text": body.prompt})
                 planner = (
                     propose_design if body.agent_mode == "tools" else propose_document
                 )
@@ -1423,6 +1435,7 @@ def create_router(cad_lock, crate_reader=None):
                         "topology_ids": body.selection,
                     },
                     use_cache=not body.regenerate,
+                    conversation_context=prior_conversation,
                     **(
                         {"resume_from": body.resume_from}
                         if body.agent_mode == "tools"
@@ -1433,11 +1446,33 @@ def create_router(cad_lock, crate_reader=None):
                     p["snapshot"] = snapshot(
                         p["document"], cad_lock, include_drawing=False
                     )
+                chat.append(
+                    body.document_id,
+                    id,
+                    "assistant",
+                    {
+                        "text": p.get("summary", ""),
+                        "questions": p.get("questions", []),
+                        "status": p.get("status"),
+                        "estimated_cost_usd": p.get("estimated_cost_usd"),
+                    },
+                )
                 with JOBS_LOCK:
                     JOBS[id].update(
                         status="completed", stage="Review proposal", proposal=p
                     )
+                    chat.save_job(JOBS[id])
             except Exception as error:
+                try:
+                    chat.append(
+                        body.document_id,
+                        id,
+                        "assistant",
+                        {"text": str(error), "status": "error"},
+                    )
+                except Exception as persistence_error:
+                    with JOBS_LOCK:
+                        JOBS[id]["conversation_error"] = str(persistence_error)
                 with JOBS_LOCK:
                     JOBS[id].update(
                         status="failed", stage="Request failed", error=str(error)
@@ -1456,8 +1491,33 @@ def create_router(cad_lock, crate_reader=None):
     @router.get("/jobs/{id}")
     def get_job(id: str):
         with JOBS_LOCK:
-            if id not in JOBS:
+            missing = id not in JOBS
+        if missing:
+            # Never wait for native CAD while holding the progress/job lock:
+            # an active CAD worker may need that lock to report a tool event.
+            retained = chat.read_job(id)
+            if retained is None:
                 raise HTTPException(404, "Proposal not found")
+            from .workspace_agent import RUNS
+
+            path = RUNS / id / "proposal.json"
+            if path.is_file():
+                proposal = json.loads(path.read_text(encoding="utf-8"))
+                if proposal.get("status") == "ready":
+                    proposal["snapshot"] = snapshot(
+                        proposal["document"], cad_lock, include_drawing=False
+                    )
+                retained.update(
+                    status="completed", stage="Retained proposal", proposal=proposal
+                )
+            else:
+                retained.update(
+                    status="failed",
+                    error="The previous server stopped before a final response was saved. Raw receipts remain retained; no request was automatically repeated.",
+                )
+            with JOBS_LOCK:
+                JOBS.setdefault(id, retained)
+        with JOBS_LOCK:
             return deepcopy(
                 {
                     key: value
@@ -1483,6 +1543,7 @@ def create_router(cad_lock, crate_reader=None):
 
     @router.post("/proposals/{id}/apply")
     def apply_proposal(id: str):
+        get_job(id)
         with STORE_LOCK:
             with JOBS_LOCK:
                 job = deepcopy(JOBS.get(id))
@@ -1512,6 +1573,7 @@ def create_router(cad_lock, crate_reader=None):
             )
             with JOBS_LOCK:
                 JOBS[id]["applied_id"] = saved["id"]
+                chat.save_job(JOBS[id])
             return saved
 
     @router.get("/documents/{id}/export/{format}")
