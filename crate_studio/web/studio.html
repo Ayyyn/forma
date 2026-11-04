@@ -6,6 +6,7 @@
     <title>Forma Studio — Parametric CAD</title>
     <link rel="stylesheet" href="/assets/studio.css" />
     <link rel="stylesheet" href="/assets/workflow.css" />
+    <link rel="stylesheet" href="/assets/studio_chrome.css" />
     <script type="importmap">
       { "imports": { "three": "/assets/vendor/three.module.js" } }
     </script>
@@ -50,7 +51,7 @@
     </div>
 
     <main class="studio-layout">
-      <aside class="explorer">
+      <aside class="explorer" aria-label="Design explorer">
         <div class="panel-heading">
           DESIGN EXPLORER
           <button class="drawer-close" data-close-drawer>×</button>
@@ -87,7 +88,7 @@
           ><span>PARAMETRIC CAD</span
           ><button data-drawer="inspector">Properties ⚙</button>
         </div>
-        <nav class="view-tabs">
+        <nav class="view-tabs" aria-label="Design views">
           <button data-tab="canvas">▦ Canvas</button
           ><button data-tab="project">Project</button
           ><button data-tab="model" class="active">◇ Model</button
@@ -110,7 +111,7 @@
             </div>
             <div class="model-edit-toolbar">
               <select id="edit-target" aria-label="Move or rotate target"><option value="selected">Selected body</option><option value="all">Whole model</option></select>
-              <button id="move-body">Move</button><button id="rotate-body">Rotate</button><button id="place-exact">Exact placement…</button><button id="edit-dimensions">Dimensions…</button><button id="hole-at-point">Hole at point</button><button id="component-at-point">Component at point</button><span id="edit-pick-status">Click a face to select a body</span>
+              <button id="move-body">Move</button><button id="rotate-body">Rotate</button><button id="place-exact" title="Exact numeric placement">Place…</button><button id="edit-dimensions">Dimensions…</button><button id="hole-at-point" title="Place a hole on a selected face">Hole at point</button><button id="component-at-point" title="Insert a library component at a selected point">Insert component</button><span id="edit-pick-status">Click a face to select a body</span>
             </div>
             <div
               id="viewport"
@@ -161,7 +162,7 @@
                 ><button data-sketch-tool="circle">○ Circle</button>
                 <button id="sketch-delete" class="danger" disabled title="Delete selected sketch (Delete or Backspace)">Delete sketch</button>
               </div>
-              <label
+              <div class="sketch-settings"><label
                 ><input id="snap-enabled" type="checkbox" checked /> Snap</label
               ><select id="snap-step" aria-label="Grid snap size">
                 <option value="1">1 mm</option>
@@ -170,7 +171,7 @@
               ><label><input id="sketch-reference" type="checkbox" checked /> Model reference</label
               ><button id="sketch-fit">Fit</button
               ><button id="sketch-minus" title="Zoom out">−</button
-              ><button id="sketch-plus" title="Zoom in">＋</button>
+              ><button id="sketch-plus" title="Zoom in">＋</button></div>
             </div>
             <div id="sketch-surface">
               <canvas
@@ -255,7 +256,7 @@
         </section>
       </section>
 
-      <aside class="inspector">
+      <aside class="inspector" aria-label="Properties">
         <div class="panel-heading">
           PROPERTIES <button class="drawer-close" data-close-drawer>×</button>
         </div>

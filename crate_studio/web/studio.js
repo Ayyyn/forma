@@ -50,6 +50,10 @@ const fmt = (n, d = 2) =>
     : "—";
 
 const uid = () => `f-${crypto.randomUUID().slice(0, 10)}`;
+// Keep camera controls below the toolbar when readable labels wrap on narrow views.
+new ResizeObserver(([entry]) => {
+  $("#model-tab").style.setProperty("--model-toolbar-bottom", `${entry.target.getBoundingClientRect().height + 16}px`);
+}).observe($(".model-edit-toolbar"));
 $("#close-live-design").onclick = () => $("#live-design-dialog").close();
 $("#live-design-dialog").addEventListener("close", () => { $("#agent-follow").checked = false; });
 $("#agent-follow").onchange = () => { if ($("#agent-follow").checked && liveLatest) showLiveDesign(); };
@@ -448,17 +452,25 @@ function renderAll() {
 
 function renderTools() {
   const types = acceptedTypes();
-  $("#operation-tools").innerHTML = Object.entries(definitions)
-    .filter(
-      ([t]) =>
-        types.includes(t) &&
-        !["import_step", "mate", "face_offset"].includes(t),
-    )
-    .map(
-      ([t, d]) =>
-        `<button data-add="${t}" title="${esc(d.label)}"><span>${d.icon}</span>${d.label}</button>${t === "cylinder" && types.includes("sketch_extrude") ? '<span class="tool-divider"></span><button id="start-sketch"><span>⌑</span>Sketch</button>' : ""}`,
-    )
-    .join("");
+  const available = Object.entries(definitions).filter(([type]) =>
+    types.includes(type) && !["import_step", "mate", "face_offset"].includes(type));
+  const primary = ["box", "cylinder", "sketch_extrude", "cut_hole", "fillet"];
+  const command = ([type, definition]) => `<button data-add="${type}" title="${esc(definition.label)}" aria-label="${esc(definition.label)}"><span aria-hidden="true">${definition.icon}</span>${esc(definition.label)}</button>`;
+  const main = available.filter(([type]) => primary.includes(type));
+  const extra = available.filter(([type]) => !primary.includes(type));
+  const components = ["folding_assembly", "spur_gear", "bevel_gear", "threaded_body", "socket_head_screw"];
+  const groups = [
+    ["Modify", extra.filter(([type]) => !components.includes(type))],
+    ["Structures & components", extra.filter(([type]) => components.includes(type))],
+  ];
+  $("#operation-tools").innerHTML =
+    (types.includes("sketch_extrude") ? '<button id="start-sketch" title="Draw a sketch"><span aria-hidden="true">⌑</span>Sketch</button><span class="tool-divider"></span>' : "") +
+    main.map(command).join("") +
+    (extra.length ? `<details class="operation-more"><summary>More tools <span aria-hidden="true">⌄</span></summary><div class="operation-menu" aria-label="More CAD tools">${groups.filter(([, entries]) => entries.length).map(([label, entries]) => `<section><h2>${label}</h2>${entries.map(command).join("")}</section>`).join("")}</div></details>` : "");
+  const more = $(".operation-more");
+  more?.addEventListener("click", event => {
+    if (event.target.closest("button[data-add]")) more.open = false;
+  });
   $("#start-sketch")?.addEventListener("click", () => {
     setTab("sketch");
     setSketchTool("rectangle");
@@ -474,6 +486,17 @@ function renderTools() {
     (b) => (b.disabled = !types.includes("sketch_extrude")),
   );
 }
+
+document.addEventListener("pointerdown", event => {
+  const more = $(".operation-more[open]");
+  if (more && !more.contains(event.target)) more.open = false;
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    const more = $(".operation-more[open]");
+    if (more) { more.open = false; more.querySelector("summary").focus(); }
+  }
+});
 
 function renderTree() {
   const results = state.previewResults || state.snapshot?.feature_results || [];
