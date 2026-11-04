@@ -39,6 +39,7 @@ MODULES = (
     "test_native_study",
     "test_component_exports",
     "test_conversations",
+    "test_viewport_measurements",
 )
 
 

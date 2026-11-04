@@ -11,6 +11,7 @@ from pathlib import Path
 import threading
 
 from .workspace_geometry import build_document
+from .viewport_measurements import body_measurements
 
 VERSION = hashlib.sha256(
     Path(__file__).with_name("workspace_geometry.py").read_bytes()
@@ -73,19 +74,27 @@ def cached_build(document, asset_loader=None):
     try:
         key = _build_identity(document, asset_loader)
     except (ValueError, TypeError, KeyError, OSError):
-        return build_document(document, asset_loader)
+        return _measured_build(document, asset_loader)
     with _lock:
         if key in _values:
             _hits += 1
             _values.move_to_end(key)
             return _values[key]
         _misses += 1
-        result = build_document(document, asset_loader)
+        result = _measured_build(document, asset_loader)
         if result["checks"]["passed"] or not document["features"]:
             _values[key] = result
             while len(_values) > MAXSIZE:
                 _values.popitem(last=False)
         return result
+
+
+def _measured_build(document, asset_loader):
+    # Derive reference dimensions once with the native build, while its caller
+    # owns the CAD lock. Warm snapshots copy only plain data, never query BREP.
+    result = build_document(document, asset_loader)
+    result["body_measurements"] = body_measurements(result["parts"])
+    return result
 
 
 def cache_clear():

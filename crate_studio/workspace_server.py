@@ -518,6 +518,7 @@ def snapshot(document, cad_lock, drawing_context=None, include_drawing=True):
             "face_meshes": result["face_meshes"],
             "edge_meta": result["edge_meta"],
         },
+        "body_measurements": deepcopy(result["body_measurements"]),
         "metrics": result["metrics"],
         "checks": checks,
         "feature_results": statuses,

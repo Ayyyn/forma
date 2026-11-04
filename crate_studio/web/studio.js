@@ -8,8 +8,11 @@ import { referenceSegments, savedSketchCount } from "/assets/sketch_reference.mj
 import { selectedSketch, sketchKeyCommand } from "/assets/sketch_actions.mjs";
 import { pivotTranslation } from "/assets/manual_geometry.mjs";
 import { conversationUI } from "/assets/conversation.js";
+import {viewportTools} from '/assets/viewport_tools.js';
 let chatUI, pointAction=null, pickedHole=null, placementSelection=null;
 let modelViewFitted=false;
+let modelViewportTools;
+function cancelDirectDrag(){modelViewportTools?.cancel();}
 let sectionUI;
 let sketchReferenceKey = null, sketchReferenceLines = [], sketchFitKey = null;
 let workflow;
@@ -380,6 +383,7 @@ function acceptedTypes() {
 }
 
 function useSnapshot(value) {
+  cancelDirectDrag();
   const s = value.snapshot || value;
   if (!s.document || !s.geometry)
     throw new Error("The CAD engine returned an incomplete document.");
@@ -485,7 +489,7 @@ function renderInspector() {
   let selected = "";
   if (state.selection.length) {
     const picked = state.selection[state.selection.length - 1];
-    selected = `<div class="selected-geometry"><div class="section-title">SELECTED ${picked.kind === "edge" ? "EDGE" : "FACE"} <button id="clear-selection" title="Clear selection">×</button></div><p>${esc(picked.part_id || "Body")} · ${esc(picked.id)}</p>${picked.area_mm2 != null ? `<p>Area <strong>${fmt(picked.area_mm2)} mm²</strong></p>` : ""}${picked.length_mm != null ? `<p>Length <strong>${fmt(picked.length_mm)} mm</strong></p>` : ""}${picked.kind === "edge" ? '<button id="fillet-selected" class="small-button">Fillet edge</button><button id="chamfer-selected" class="small-button">Chamfer edge</button>' : ""}<button id="hide-selected" class="small-button">Hide body</button>${gizmo ? '<button id="translate-selected" class="small-button">Move body ✥</button>' : ""}<p class="parameter-note">${picked.kind === "edge" ? "Ctrl-click another edge on this body for a shared edit. Measure reports exact selected-edge distance." : "Ctrl-click a second planar face on another body to align."}</p>${canMate() ? '<button id="align-selected" class="small-button">Align these faces</button>' : ""}${acceptedTypes().includes("face_offset") && String(picked.geom_type || picked.type).toUpperCase() === "PLANE" ? '<div class="push-pull-row"><label>Offset · mm<input id="face-offset-distance" type="number" value="5" step="any"></label><button id="push-pull-face">Push / pull ↥</button></div><p class="parameter-note">Positive outward, negative inward. Creates an editable solid operation.</p>' : ""}</div>`;
+    selected = `<div class="selected-geometry"><div class="section-title">SELECTED ${picked.kind === "body" ? "COMPONENT" : picked.kind === "edge" ? "EDGE" : "FACE"} <button id="clear-selection" title="Clear selection">×</button></div><p>${esc(picked.part_id || "Body")} · ${esc(picked.id)}</p>${picked.area_mm2 != null ? `<p>Area <strong>${fmt(picked.area_mm2)} mm²</strong></p>` : ""}${picked.length_mm != null ? `<p>Length <strong>${fmt(picked.length_mm)} mm</strong></p>` : ""}${picked.kind === "edge" ? '<button id="fillet-selected" class="small-button">Fillet edge</button><button id="chamfer-selected" class="small-button">Chamfer edge</button>' : ""}<button id="hide-selected" class="small-button">Hide body</button>${gizmo ? '<button id="translate-selected" class="small-button">Move body ✥</button>' : ""}<p class="parameter-note">${picked.kind === "body" ? "Drag this component to move it; use Dimensions to edit its features." : picked.kind === "edge" ? "Ctrl-click another edge on this body for a shared edit. Measure reports exact selected-edge distance." : "Ctrl-click a second planar face on another body to align."}</p>${canMate() ? '<button id="align-selected" class="small-button">Align these faces</button>' : ""}${acceptedTypes().includes("face_offset") && String(picked.geom_type || picked.type).toUpperCase() === "PLANE" ? '<div class="push-pull-row"><label>Offset · mm<input id="face-offset-distance" type="number" value="5" step="any"></label><button id="push-pull-face">Push / pull ↥</button></div><p class="parameter-note">Positive outward, negative inward. Creates an editable solid operation.</p>' : ""}</div>`;
   }
 
   if (!f) {
@@ -1022,10 +1026,12 @@ async function setup3D() {
     renderer.setAnimationLoop(() => {
       if (state.tab !== "model" || document.hidden) return;
       controls.update();
+      modelViewportTools?.update();
       renderer.render(scene, camera);
     });
     resize3D();
     await setupGizmo();
+    modelViewportTools=viewportTools({$,esc,state,get3D:()=>({THREE,camera,renderer,controls,scene,grid,meshes,faces,pickEdges,gizmo,gizmoDragging,pointAction}),setGrid:value=>grid=value,highlight:highlightSelection,inspect:renderInspector,status,toast,addFeature});
   } catch (e) {
     $("#webgl-fallback").classList.remove("hidden");
     $("#webgl-fallback").textContent =
@@ -1101,6 +1107,7 @@ $("#selection-mode").addEventListener("change", () => {
   status(
     $("#selection-mode").value === "edges"
       ? "Pick edges · Ctrl-click to add a second edge"
+      : $("#selection-mode").value === "bodies" ? "Select or drag a component · empty space to orbit"
       : "Pick faces · Ctrl-click a second face to align",
   );
 });
@@ -1234,21 +1241,7 @@ function renderGeometry() {
     faces.push(mesh);
   }
   buildPickEdges(data);
-  if (grid) {
-    scene.remove(grid);
-    grid.geometry.dispose();
-    grid.material.dispose();
-  }
-  const b = state.snapshot.metrics?.bounds_mm || [
-      [-50, -50, 0],
-      [50, 50, 50],
-    ],
-    sizes = b[1].map((v, i) => v - b[0][i]),
-    extent = Math.max(...sizes, 100) * 5;
-  grid = new THREE.GridHelper(extent, 50, 0xc6d1e1, 0xe0e6ef);
-  grid.position.y = Math.min(0, b[0][2]) - 0.02;
-  grid.visible = $("#show-grid").checked;
-  scene.add(grid);
+  modelViewportTools?.sync();
   if(!modelViewFitted&&meshes.length){fitView();modelViewFitted=true;}
 }
 
@@ -1307,7 +1300,8 @@ function pickGeometry(e) {
     (-(e.clientY - r.top) / r.height) * 2 + 1,
   );
   raycaster.setFromCamera(pointer, camera);
-  const edgeMode = $("#selection-mode").value === "edges";
+  const edgeMode = !pointAction && $("#selection-mode").value === "edges";
+  const bodyMode = !pointAction && $('#selection-mode').value==='bodies';
   const bounds = state.snapshot.metrics.bounds_mm || [
     [0, 0, 0],
     [100, 100, 100],
@@ -1317,7 +1311,7 @@ function pickGeometry(e) {
     Math.hypot(...bounds[1].map((v, i) => v - bounds[0][i])) * 0.006,
   );
   const hit = raycaster
-    .intersectObjects(edgeMode ? pickEdges : faces.length ? faces : meshes)
+    .intersectObjects(bodyMode?meshes:edgeMode ? pickEdges : faces.length ? faces : meshes,false)
     .find((x) => x.object.visible);
   if (!hit) {
     state.selection = [];
@@ -1328,8 +1322,9 @@ function pickGeometry(e) {
   const item = {
     ...hit.object.userData,
     point: [hit.point.x, -hit.point.z, hit.point.y],
-    kind: edgeMode ? "edge" : faces.length ? "face" : "body",
+    kind: bodyMode?'body':edgeMode ? "edge" : faces.length ? "face" : "body",
   };
+  if(bodyMode)item.part_id=item.id;
   if(pointAction){
     if(state.busy||state.inspectorDirty||state.agentPreview){toast('Save or discard pending edits first.',true);return;}
     state.selection=[item];highlightSelection();renderInspector();
@@ -1352,12 +1347,14 @@ function pickGeometry(e) {
 }
 
 function highlightSelection() {
-  faces.forEach(
-    (m) =>
-      (m.material.opacity = state.selection.some((s) => s.id === m.userData.id)
-        ? 0.38
-        : 0),
-  );
+  const selectedBodies=new Set(state.selection.map(s=>s.part_id||s.id));
+  meshes.forEach(mesh=>{const active=selectedBodies.has(mesh.userData.id);mesh.material.emissive.set(active?'#b37c27':'#000000');mesh.material.emissiveIntensity=active ? 0.22 : 0;mesh.children.forEach(edge=>edge.material?.color?.set(active?'#b36b22':'#6f829e'));});
+  modelViewportTools?.invalidate();
+  faces.forEach(m=>{
+    const body=state.selection.some(s=>s.kind==='body'&&(s.part_id||s.id)===m.userData.part_id);
+    m.material.color.set(body?'#efb34c':'#6e94e8');
+    m.material.opacity=body ? 0.3 : state.selection.some(s=>s.id===m.userData.id) ? 0.38 : 0;
+  });
   pickEdges.forEach((m) => {
     const selected = state.selection.some((s) => s.id === m.userData.id);
     m.material.color.set(selected ? "#d58b43" : "#788fac");
@@ -2694,6 +2691,11 @@ chatUI=conversationUI({$,esc,state,api,openProposal:async(id,prompt)=>{
 }});
 $('#move-body').onclick=()=>translateSelected('translate');
 $('#rotate-body').onclick=()=>translateSelected('rotate');
+$('#chat-minimize').onclick=()=>{
+  const hidden=$('.agent-panel').classList.toggle('chat-minimized');
+  $('#chat-minimize').textContent=hidden?'Show chat':'Hide chat';
+  $('#chat-minimize').setAttribute('aria-expanded',String(!hidden));
+};
 $('#place-exact').onclick=()=>{
   if(state.busy||state.inspectorDirty||state.agentPreview){toast('Save or discard pending edits first.',true);return;}
   placementSelection=activePlacement();if(!placementSelection)return;
