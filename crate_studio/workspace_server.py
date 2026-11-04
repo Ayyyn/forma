@@ -87,6 +87,7 @@ EXPORT_VERSION = hashlib.sha256(
             "assembly_study.py",
             "retention_study.py",
             "prismatic_controls.py",
+            "handling_study.py",
             "design_tools.py",
             "mechanism_study.py",
             "motion_cache.py",

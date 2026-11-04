@@ -164,7 +164,19 @@ class RetentionTests(unittest.TestCase):
                     "passed"
                 ]
             )
+            stronger = deepcopy(target)
+            stronger["part_ids"] = ["body_001", "body_002"]
+            checked = session.call(
+                "check_retention", {"candidate_id": cid, "spec": stronger}
+            )
+            self.assertTrue(checked["passed"], checked)
             self.assertTrue(session.call("finish_design", finish)["ok"])
+            self.assertEqual(
+                session.finished["document"]["metadata"]["native_study_targets"][
+                    "retention"
+                ]["part_ids"],
+                stronger["part_ids"],
+            )
 
     def test_invalid_or_missing_retention_identifiers_fail(self):
         doc, target = fixture()

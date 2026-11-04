@@ -76,6 +76,8 @@ Saved-revision payloads use bounded exact process-local reuse, including actual 
 
 Geometry-only snapshots for a new label or section revision can also reuse an already owned, checked native build while an unrelated study is running. New or changed solids and imported asset bytes still require native work; vector projections remain serialized.
 
+Drawing and live-preview requests keep one projection in flight and collapse rapid revision changes to the latest source. Obsolete vectors cannot replace the current revision, and leaving the drawing view prevents queued projections from starting.
+
 Studio loads checked 3D geometry before computing vector drawings. Drawing, Canvas and the live draft's Drawing view request exact native projections when needed; stale source, package or imported-asset responses cannot replace the current view. Export and engineering verification still generate full native drawings. Revision labels and notes reuse owned projection curves without reusing stale sheet text. A normal save validates and persists in one request.
 
 Ordinary geometry exports verify STEP/STL readback and native drawings without starting a new general mechanism analysis. Their workflow report retains source-bound review status and explicitly labels motion as not rechecked during export. Use Motion or Recheck native study for current collision evidence. Print & assembly pack retains its mandatory assembly, capture and lock/end-stop release checks. Wheel scrolling over numeric inspector fields does not change dimensions.

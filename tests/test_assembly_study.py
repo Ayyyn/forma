@@ -1,6 +1,5 @@
 """Actual solids: insertion obstruction, staged detour and source-pose gates."""
 
-from copy import deepcopy
 import tempfile
 import unittest
 from crate_studio.assembly_study import assembly_study, matrix
@@ -62,8 +61,26 @@ def path(detour=False):
 
 
 class AssemblyTests(unittest.TestCase):
+    def test_failed_path_stops_at_first_collision_and_passing_path_is_fully_sampled(
+        self,
+    ):
+        doc, native = fixture()
+        blocked = assembly_study(doc, native, path(False))
+        self.assertFalse(blocked["passed"])
+        self.assertEqual(blocked["collision_sample_count"], 1)
+        self.assertFalse(blocked["sampling_complete"])
+        self.assertLess(blocked["sample_count"], blocked["planned_sample_count"])
+        self.assertLess(blocked["frames"][-1]["progress_pct"], 100)
+        self.assertTrue(blocked["frames"][-1]["overlaps"])
+        clear = assembly_study(doc, native, path(True))
+        self.assertTrue(clear["passed"])
+        self.assertTrue(clear["sampling_complete"])
+        self.assertEqual(clear["sample_count"], clear["planned_sample_count"])
+        self.assertEqual(clear["frames"][-1]["progress_pct"], 100)
+
     def test_driver_delivers_failed_pose_image_without_selecting_a_design(self):
-        import json, os
+        import json
+        import os
         from pathlib import Path
         from unittest.mock import patch
         from crate_studio import design_agent as da, workspace_agent as wa

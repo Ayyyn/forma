@@ -13,6 +13,7 @@ MODULES = (
     "test_lazy_drawing",
     "test_checkpoint_recovery",
     "test_planning_context",
+    "test_handling_study",
     "test_export_cache_identity",
     "test_budget",
     "test_component_library",

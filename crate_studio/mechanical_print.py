@@ -332,6 +332,20 @@ def export_print_pack(
             raise ValueError(
                 "Lock/unlock/end-stop controls fail; repair the mechanism before print release"
             )
+    handling_targets = (
+        document.get("metadata", {})
+        .get("native_study_targets", {})
+        .get("handling_paths")
+    )
+    handling = None
+    if handling_targets is not None:
+        from .handling_study import handling_study
+
+        handling = handling_study(document, built, handling_targets)
+        if not handling["passed"]:
+            raise ValueError(
+                "An unwanted lift/pull handling path remains clear; repair capture before print release"
+            )
     oriented = [orient_part(p) for p in parts]
     plates = arrange(oriented, settings)
     checks, rows = {}, []
@@ -425,6 +439,8 @@ def export_print_pack(
         write_json("retention-verification.json", retention)
     if controls:
         write_json("lock-controls.json", controls)
+    if handling:
+        write_json("handling-verification.json", handling)
     manifest = {
         "format": "forma-mechanical-print/v1",
         "units": "mm (STL has no unit field)",

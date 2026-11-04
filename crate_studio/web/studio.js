@@ -1803,6 +1803,7 @@ $("#annotation-save").addEventListener("click", async () => {
 });
 
 const ensureDrawing=drawingRequest({getSnapshot:()=>state.snapshot,api,
+  isNeeded:()=>state.tab==='drawing'||state.tab==='canvas',
   onReady:snapshot=>{workflow?.update(snapshot);renderDrawing();},
   onError:error=>{$('#drawing-sheet').textContent=error.message;toast(error.message,true);}});
 function renderDrawing() {

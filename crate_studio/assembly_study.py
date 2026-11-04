@@ -149,7 +149,7 @@ def assembly_study(document, built, raw):
         None
         if identity is None
         else (
-            "assembly-v1",
+            "assembly-v2",
             identity,
             geometry_signature(document),
             json.dumps(spec, sort_keys=True, allow_nan=False),
@@ -254,6 +254,8 @@ def _calculate_assembly(document, parts, ids, spec, target):
 
     sample("Separated parts", 0, initial)
     for segment, (name, start, end, count) in enumerate(segments):
+        if frames[-1]["overlaps"]:
+            break
         rotations = {
             key: Slerp(
                 [0, 1],
@@ -270,14 +272,19 @@ def _calculate_assembly(document, parts, ids, spec, target):
                 value[:3, 3] = (1 - t) * start[key][:3, 3] + t * end[key][:3, 3]
                 matrices[key] = value
             sample(name, t, matrices, segment)
+            if frames[-1]["overlaps"]:
+                break
     for i, frame in enumerate(frames):
-        frame["progress_pct"] = 100 * i / (len(frames) - 1)
+        frame["progress_pct"] = 100 * i / (total - 1)
     failures = [frame for frame in frames if frame["overlaps"]]
     return {
         "geometry_signature": geometry_signature(document),
         "spec": spec,
         "frames": frames,
         "sample_count": len(frames),
+        "planned_sample_count": total,
+        "sampling_complete": len(frames) == total,
+        "sampling_policy": "Rejected paths stop at the first collision; passing paths check every planned pose.",
         "collision_sample_count": len(failures),
         "initial_separation_passed": separated,
         "initial_separations": separations,

@@ -37,6 +37,7 @@ TOOL_VERSION = hashlib.sha256(
             "assembly_study.py",
             "retention_study.py",
             "prismatic_controls.py",
+            "handling_study.py",
         )
     )
     + Path(__file__).with_name("web").joinpath("vendor", "FormaSans.ttf").read_bytes()
@@ -141,6 +142,7 @@ def report_key(name, arguments):
         "check_assembly": "assembly",
         "check_retention": "retention",
         "check_prismatic_controls": "prismatic_controls",
+        "check_handling": "handling",
     }.get(name)
 
 
@@ -339,6 +341,11 @@ def tool_definitions():
         (
             "check_retention",
             "Release virtual constraints and probe each requested part in six world directions at named states. spec={part_ids:[body IDs],state_names:[names],distance_mm:6,samples:41}; spec:{} uses saved native_study_targets.retention. A clear escape disproves capture. Passing straight translations does not prove rotational/global captivity or physical fit. For permanent parts check unlocked AND locked sizes, not only their sliding axis.",
+            _object({**_CID, "spec": {"type": "object"}}),
+        ),
+        (
+            "check_handling",
+            "Test retained unwanted multi-step lift/pull paths with virtual constraints released. spec:{} uses native_study_targets.handling_paths; explicit spec={paths:[{name,state_name,joint_ids:[IDs],steps:[{translation_mm:[x,y,z],samples:2..41}]}]}. Joint descendants move together. Passing means a positive-offset native obstruction blocks each specified path from an initially clear pose; not global captivity or physical fit.",
             _object({**_CID, "spec": {"type": "object"}}),
         ),
         (
@@ -554,7 +561,23 @@ class DesignSession:
                         "No retained prismatic controls; provide spec:{modes:[...]}"
                     )
                 arguments = {**arguments, "spec": {"modes": deepcopy(contract)}}
-            if name in ("check_retention", "check_prismatic_controls") or (
+            if name == "check_handling" and arguments.get("spec") == {}:
+                contract = (
+                    self._candidate(referenced)["document"]
+                    .get("metadata", {})
+                    .get("native_study_targets", {})
+                    .get("handling_paths")
+                )
+                if contract is None:
+                    raise ValueError(
+                        "No retained handling paths; provide spec:{paths:[...]}"
+                    )
+                arguments = {**arguments, "spec": {"paths": deepcopy(contract)}}
+            if name in (
+                "check_retention",
+                "check_prismatic_controls",
+                "check_handling",
+            ) or (
                 name == "check_assembly"
                 and isinstance(arguments.get("spec"), dict)
                 and arguments["spec"].get("target_state") is not None
@@ -936,6 +959,26 @@ class DesignSession:
                 ][:3],
                 "evidence": f"{ident}/{evidence_name}",
             }
+        if name == "check_handling":
+            from .handling_study import handling_study
+
+            if set(a["spec"]) != {"paths"}:
+                raise ValueError("Handling spec requires paths")
+            value = handling_study(
+                doc, built, a["spec"]["paths"], a.get("_target_mechanism")
+            )
+            self._write_json(ident, "handling.json", value)
+            reports["handling"] = deepcopy(value)
+            return {
+                k: v for k, v in value.items() if k not in ("cases", "mechanism_spec")
+            } | {
+                "failed_paths": [
+                    {k: v for k, v in c.items() if k != "steps"}
+                    for c in value["cases"]
+                    if not c["passed"]
+                ],
+                "evidence": f"{ident}/handling.json",
+            }
         if name == "check_retention":
             from .retention_study import retention_study
 
@@ -1283,11 +1326,40 @@ class DesignSession:
                 )
                 if (
                     not checked.get("passed")
-                    or checked.get("spec") != expected
+                    or checked.get("spec", {}).get("distance_mm")
+                    != expected["distance_mm"]
+                    or checked.get("spec", {}).get("samples") != expected["samples"]
+                    or not set(expected["part_ids"])
+                    <= set(checked.get("spec", {}).get("part_ids", []))
+                    or not set(expected["state_names"])
+                    <= set(checked.get("spec", {}).get("state_names", []))
                     or checked.get("mechanism_spec") != motion
                 ):
                     raise ValueError(
                         "Run and pass check_retention for ALL retained parts/states using the current checked motion spec; inherited or weaker probes are not proof"
+                    )
+                # Extra verified keepers/states strengthen the persistent
+                # contract so subsequent edits/rechecks cannot silently omit them.
+                doc["metadata"]["native_study_targets"]["retention"] = deepcopy(
+                    checked["spec"]
+                )
+            handling = (
+                doc.get("metadata", {})
+                .get("native_study_targets", {})
+                .get("handling_paths")
+            )
+            if handling is not None:
+                from .handling_study import specification as handling_spec
+
+                checked = reports.get("handling", {})
+                motion = reports.get("motion", {}).get("spec", {})
+                if (
+                    not checked.get("passed")
+                    or checked.get("spec") != handling_spec(handling, motion)
+                    or checked.get("mechanism_spec") != motion
+                ):
+                    raise ValueError(
+                        "Run and pass check_handling for ALL retained paths with the current checked motion spec"
                     )
             modes = (
                 doc.get("metadata", {})

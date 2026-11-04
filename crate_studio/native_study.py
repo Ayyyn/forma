@@ -112,6 +112,15 @@ def recheck(document, folder, asset_loader=None, geometry_lock=None):
             "check_prismatic_controls", {"candidate_id": "base", "spec": {}}
         )
     results["exports"] = session.call("verify_exports", {"candidate_id": "base"})
+    if (
+        document.get("metadata", {})
+        .get("native_study_targets", {})
+        .get("handling_paths")
+        is not None
+    ):
+        results["handling"] = session.call(
+            "check_handling", {"candidate_id": "base", "spec": {}}
+        )
     passed = all(r.get("ok") and r.get("passed") for r in results.values())
     reports = deepcopy(session.reports.get("base", {}))
     if "motion" in reports:
